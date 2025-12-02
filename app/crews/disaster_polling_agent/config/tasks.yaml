@@ -1,0 +1,67 @@
+poll_nws_alerts:
+  description: >
+    Poll the NWS API active alerts endpoint using the NWSPollingTool.
+    Use the last disaster poll time from state to add the If-Modified-Since header
+    if available. Filter results by:
+    - Severity: Extreme OR Severe
+    - Urgency: Immediate OR Expected
+    - Certainty: Observed OR Likely
+    - Status: actual
+    - Event types: BZW, EWW, CFW, DSW, FFW, FLW, HWW, HUW, SVR, SMW, SSW, TOR, TSW, TRW, WSW, AVW, FRW, EQW, VOW
+    Return all filtered alerts for further processing.
+  expected_output: >
+    A PolledNWSAlertsOutput object containing a list of filtered NWS alerts that meet
+    the severity/urgency/certainty criteria, along with the total count and poll timestamp.
+    Each alert should include all relevant metadata: alert_id, event_type, message_type,
+    severity, urgency, certainty, effective time, expiration time, headline, description,
+    and raw alert data.
+
+create_vtec_keys:
+  description: >
+    For each alert from the polling task, create a unique VTEC key using the pattern:
+    "Office + Phenomena + Significance + ETN + Year"
+    Extract this information from the alert's VTEC code or properties.
+    The key should uniquely identify each watch or warning.
+    Return a list of alerts with their corresponding VTEC keys.
+  expected_output: >
+    A VTECKeysOutput object containing a list of VTEC keys created for each alert.
+    Each key should include the alert_id, the complete VTEC key string, and the individual
+    components (office, phenomena, significance, ETN, year) for validation purposes.
+    Include the total number of keys created and overall validation status.
+
+verify_keys:
+  description: >
+    Verify the VTEC keys created in the previous task. Check that:
+    1. Each key follows the correct pattern (Office + Phenomena + Significance + ETN + Year)
+    2. Keys are unique (no duplicates)
+    3. Keys match the expected structure
+    If any keys are invalid, correct them. Return verified keys with validation status.
+  expected_output: >
+    A VerifiedVTECKeysOutput object containing a list of verified VTEC keys with validation
+    status for each key. Include whether each key is valid, any validation errors found,
+    and the expected key pattern. Provide summary statistics: total verified, valid count,
+    invalid count, and whether all keys are valid.
+
+classify_alerts:
+  description: >
+    Classify alerts into four groups: new_events, updated_events, new_episodes, updated_episodes.
+    Use GetActiveEpisodesAndEventsTool to get current active episodes and events.
+    For each alert:
+    1. Check if the VTEC key exists in active_events or active_episodes
+    2. Determine message type (CON, CANCEL, EXP, NEW) from VTEC
+    3. For events (warnings):
+       - If key exists and message is CON/UPDATE: add to updated_events
+       - If key doesn't exist: add to new_events
+       - Check if event overlaps with active episode using GetForecastZoneTool and polygon overlap
+       - If overlaps with episode: event goes to create, episode goes to update
+       - If no overlap: event goes to create, may need new episode
+    4. For episodes (watches):
+       - If key exists: add to updated_episodes
+       - If key doesn't exist: add to new_episodes
+    Return classification results with all four groups populated.
+  expected_output: >
+    A ClassifiedAlertsOutput object containing four lists: new_events, updated_events,
+    new_episodes, and updated_episodes. Each classified alert should include the alert_id,
+    VTEC key, message type, classification category, event type, whether it overlaps with
+    an existing episode, and any associated episode key. Include the total number of
+    classified alerts.

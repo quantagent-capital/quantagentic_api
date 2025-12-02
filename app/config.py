@@ -1,5 +1,9 @@
 import os
 from typing import Optional
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 class Settings:
 	# Redis configuration
@@ -11,6 +15,23 @@ class Settings:
 	# NWS API configuration
 	nws_user_agent_name: str = os.getenv("NWS_USER_AGENT_NAME", "quantagent_capital")
 	nws_user_agent_email: str = os.getenv("NWS_USER_AGENT_EMAIL", "jacob@quantagent_capital.ai")
+	
+	# CrewAI / Gemini configuration
+	gemini_model: str = os.getenv("GEMINI_MODEL", "gemini/gemini-3-pro-preview")
+	gemini_api_key: str = os.getenv("GEMINI_API_KEY", "test")
+	
+	# Celery configuration
+	executor_max_retries: int = int(os.getenv("EXECUTOR_MAX_RETRIES", "5"))
+	
+	@property
+	def celery_broker_url(self) -> str:
+		"""Celery broker URL - uses same Redis as application."""
+		return self.redis_url
+	
+	@property
+	def celery_result_backend(self) -> str:
+		"""Celery result backend - uses same Redis as application."""
+		return self.redis_url
 	
 	@property
 	def redis_url(self) -> str:
