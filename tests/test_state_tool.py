@@ -2,8 +2,9 @@
 Unit tests for GetActiveEpisodesAndEventsTool.
 """
 import pytest
+import json
 from unittest.mock import Mock, patch
-from app.crews.tools.state_tool import GetActiveEpisodesAndEventsTool
+from app.crews.tools.get_active_events_and_episodes_tool import GetActiveEpisodesAndEventsTool
 from app.schemas.event import Event
 from app.schemas.episode import Episode
 from app.schemas.location import Location
@@ -18,7 +19,7 @@ class TestGetActiveEpisodesAndEventsTool:
 		"""Create tool instance."""
 		return GetActiveEpisodesAndEventsTool()
 	
-	@patch('app.crews.tools.state_tool.state')
+	@patch('app.crews.tools.get_active_events_and_episodes_tool.state')
 	def test_get_active_with_metadata(self, mock_state, tool):
 		"""Test getting active episodes/events with full metadata."""
 		# Setup mock state
@@ -45,12 +46,16 @@ class TestGetActiveEpisodesAndEventsTool:
 		result = tool._run(include_metadata=True)
 		
 		# Assertions
-		assert "active_episodes" in result
-		assert "active_events" in result
-		assert "episode_count" in result
-		assert "event_count" in result
+		result_data = json.loads(result)
+		assert "active_episodes" in result_data
+		assert "active_events" in result_data
+		# The tool returns lists, not counts
+		assert isinstance(result_data["active_episodes"], list)
+		assert isinstance(result_data["active_events"], list)
+		assert len(result_data["active_episodes"]) == 1
+		assert len(result_data["active_events"]) == 1
 	
-	@patch('app.crews.tools.state_tool.state')
+	@patch('app.crews.tools.get_active_events_and_episodes_tool.state')
 	def test_get_active_keys_only(self, mock_state, tool):
 		"""Test getting only keys without full metadata."""
 		mock_episode = Mock(spec=Episode)
@@ -66,10 +71,15 @@ class TestGetActiveEpisodesAndEventsTool:
 		result = tool._run(include_metadata=False)
 		
 		# Should still have the structure but minimal data
-		assert "active_episodes" in result
-		assert "active_events" in result
+		result_data = json.loads(result)
+		assert "active_episodes" in result_data
+		assert "active_events" in result_data
+		assert isinstance(result_data["active_episodes"], list)
+		assert isinstance(result_data["active_events"], list)
+		assert len(result_data["active_episodes"]) == 1
+		assert len(result_data["active_events"]) == 1
 	
-	@patch('app.crews.tools.state_tool.state')
+	@patch('app.crews.tools.get_active_events_and_episodes_tool.state')
 	def test_get_empty_state(self, mock_state, tool):
 		"""Test getting from empty state."""
 		mock_state.active_episodes = []
@@ -77,9 +87,13 @@ class TestGetActiveEpisodesAndEventsTool:
 		
 		result = tool._run()
 		
-		assert "episode_count" in result
-		assert "event_count" in result
-		assert "0" in result or "[]" in result
+		result_data = json.loads(result)
+		assert "active_episodes" in result_data
+		assert "active_events" in result_data
+		assert isinstance(result_data["active_episodes"], list)
+		assert isinstance(result_data["active_events"], list)
+		assert len(result_data["active_episodes"]) == 0
+		assert len(result_data["active_events"]) == 0
 	
 	def test_tool_name_and_description(self, tool):
 		"""Test tool metadata."""

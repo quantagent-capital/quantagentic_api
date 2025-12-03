@@ -5,19 +5,14 @@ from typing import Any
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, crew, agent, task
 from crewai import LLM
-import yaml
-import os
 from app.config import settings
 from app.crews.tools.nws_polling_tool import NWSPollingTool
-from app.crews.tools.state_tool import GetActiveEpisodesAndEventsTool
+from app.crews.tools.get_active_events_and_episodes_tool import GetActiveEpisodesAndEventsTool
 from app.crews.tools.forecast_zone_tool import GetForecastZoneTool
 from app.crews.disaster_polling_agent.models import (
 	PolledNWSAlertsOutput,
-	VTECKeysOutput,
-	VerifiedVTECKeysOutput,
 	ClassifiedAlertsOutput
 )
-
 
 @CrewBase
 class DisasterPollingCrew:
@@ -38,11 +33,6 @@ class DisasterPollingCrew:
 		"""Create the disaster spotter agent."""
 		return Agent(
 			config=self.agents_config['disaster_spotter'],
-			tools=[
-				NWSPollingTool(),
-				GetActiveEpisodesAndEventsTool(),
-				GetForecastZoneTool()
-			],
 			verbose=True,
 			allow_delegation=False,
 			llm=self.LLM
@@ -54,27 +44,8 @@ class DisasterPollingCrew:
 		return Task(
 			config=self.tasks_config['poll_nws_alerts'],
 			agent=self.disaster_spotter(),
-			output_pydantic=PolledNWSAlertsOutput
-		)
-	
-	@task
-	def create_vtec_keys_task(self) -> Task:
-		"""Task to create VTEC keys for each alert."""
-		return Task(
-			config=self.tasks_config['create_vtec_keys'],
-			agent=self.disaster_spotter(),
-			context=[self.poll_nws_alerts_task()],
-			output_pydantic=VTECKeysOutput
-		)
-	
-	@task
-	def verify_keys_task(self) -> Task:
-		"""Task to verify VTEC keys."""
-		return Task(
-			config=self.tasks_config['verify_keys'],
-			agent=self.disaster_spotter(),
-			context=[self.create_vtec_keys_task()],
-			output_pydantic=VerifiedVTECKeysOutput
+			output_pydantic=PolledNWSAlertsOutput,
+			tools=[NWSPollingTool()]
 		)
 	
 	@task
@@ -84,9 +55,7 @@ class DisasterPollingCrew:
 			config=self.tasks_config['classify_alerts'],
 			agent=self.disaster_spotter(),
 			context=[
-				self.poll_nws_alerts_task(),
-				self.create_vtec_keys_task(),
-				self.verify_keys_task()
+				self.poll_nws_alerts_task()
 			],
 			output_pydantic=ClassifiedAlertsOutput
 		)
@@ -97,10 +66,10 @@ class DisasterPollingCrew:
 		return Crew(
 			agents=self.agents,
 			tasks=self.tasks,
+			memory=False,
 			process=Process.sequential,
 			verbose=True
 		)
-	
 	
 	@staticmethod
 	def run_disaster_polling() -> Any:

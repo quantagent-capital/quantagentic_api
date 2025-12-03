@@ -2,72 +2,62 @@
 Custom CrewAI tool for polling NWS API for active alerts.
 """
 import asyncio
-from typing import Type, Optional
+import json
 from datetime import datetime
-from pydantic import BaseModel, Field
 from crewai.tools import BaseTool
+from app.crews.disaster_polling_agent.models import FilteredNWSAlert
+from app.crews.utils import vtec
 from app.http_client.nws_client import NWSClient
 from app.state import state
 from app.crews.utils.nws_event_types import ALL_NWS_EVENT_CODES
 
-
-class NWSPollingInput(BaseModel):
-	"""Input schema for NWS polling tool."""
-	use_last_poll_time: bool = Field(
-		default=True,
-		description="Whether to use the last disaster poll time from state"
-	)
-
-
 class NWSPollingTool(BaseTool):
 	"""
 	Tool to poll the NWS API for active alerts.
-	Uses If-Modified-Since header if last poll time is available.
 	"""
 	name: str = "NWSPollingTool"
 	description: str = (
 		"Use this tool to query the NWS API active alerts endpoint. "
 		"Returns active weather warnings and watches. "
-		"If last poll time is available, uses If-Modified-Since header to get only new alerts. "
-		"Filters results by severity (Extreme/Severe), urgency (Immediate/Expected), "
-		"certainty (Observed/Likely), and status (actual)."
 	)
-	args_schema: Type[BaseModel] = NWSPollingInput
 	
 	def _run(
 		self,
-		use_last_poll_time: bool = True
 	) -> str:
 		"""
 		Query the NWS API active alerts endpoint.
-		
-		Args:
-			use_last_poll_time: Whether to use If-Modified-Since header
 		
 		Returns:
 			JSON string of filtered alerts
 		"""
 		try:
 			# Run async method
-			return asyncio.run(self._async_poll(use_last_poll_time))
+			return asyncio.run(self._async_poll())
 		except Exception as e:
 			return f"Error polling NWS API: {str(e)}"
 	
-	async def _async_poll(self, use_last_poll_time: bool) -> str:
+	async def _async_poll(self) -> str:
 		"""Async implementation of polling."""
 		client = NWSClient()
 		
 		try:
 			# Prepare headers
 			headers = {}
-			if use_last_poll_time and state.last_disaster_poll_time:
+			if state.last_disaster_poll_time:
 				# Format datetime for If-Modified-Since header (RFC 7231 format)
 				last_poll = state.last_disaster_poll_time
 				headers["If-Modified-Since"] = last_poll.strftime("%a, %d %b %Y %H:%M:%S GMT")
 			
 			# Use the base client's get method with custom headers
 			try:
-				data = await client.get("/alerts/active", headers=headers)
+				params = {
+					"status": "actual",
+					"severity": "Extreme,Severe",
+					"urgency": "Immediate,Expected",
+					"certainty": "Observed,Likely"
+				}
+
+				data = await client.get("/alerts/active", params=params, headers=headers)
 			except Exception as e:
 				# Check if it's a 304 Not Modified
 				if "304" in str(e) or "Not Modified" in str(e):
@@ -75,61 +65,52 @@ class NWSPollingTool(BaseTool):
 				raise
 			
 			# Filter alerts based on criteria
-			filtered_features = []
+			alerts = []
 			if "features" in data:
 				for feature in data["features"]:
 					properties = feature.get("properties", {})
-					
-					# Check filters
-					severity = properties.get("severity", "").lower()
-					urgency = properties.get("urgency", "").lower()
-					certainty = properties.get("certainty", "").lower()
-					status = properties.get("status", "").lower()
-					
-					# Filter criteria
-					severity_ok = severity in ["extreme", "severe"]
-					urgency_ok = urgency in ["immediate", "expected"]
-					certainty_ok = certainty in ["observed", "likely"]
-					status_ok = status == "actual"
-					
-					if severity_ok and urgency_ok and certainty_ok and status_ok:
-						# Check event type - extract 3-letter code from event name
-						event_name = properties.get("event", "").upper()
-						# Event names are like "Tornado Warning" or "TOR" - extract code
-						# Try to find 3-letter code in the event name or use first 3 letters
-						event_code = None
-						
-						# Check if event name contains a known code
-						for code in ALL_NWS_EVENT_CODES:
-							if code in event_name or event_name.startswith(code[:2]):
-								event_code = code
-								break
-						
-						# If no code found, try to extract from event name
-						if not event_code:
-							# Some events might be abbreviated (e.g., "TOR" for Tornado)
-							words = event_name.split()
-							for word in words:
-								if len(word) == 3 and word.isalpha():
-									event_code = word
-									break
-						
-						# Check if it's a watch or warning
-						msg_type = properties.get("messageType", "").upper()
-						if msg_type in ["WARNING", "WATCH"]:
-							# If we have a valid code or can't determine, include it
-							# The flexible system allows for future codes
-							if event_code in ALL_NWS_EVENT_CODES or event_code is None:
-								filtered_features.append(feature)
+					# Check event type - extract 3-letter code from event name
+					event_name = properties.get("eventCode").get("NationalWeatherService", "")[0].upper()
+
+					if event_name not in ALL_NWS_EVENT_CODES:
+						continue
+
+					# Check if it's a watch or warning
+					message_type = vtec.get_message_type(properties)
+					warning_or_watch = vtec.get_warning_or_watch(properties)
+
+					if warning_or_watch is None:
+						continue
+
+					alert = FilteredNWSAlert(
+						alert_id=properties.get("id"),
+						event_type=event_name,
+						message_type=message_type,
+						is_watch=warning_or_watch == "WATCH",
+						is_warning=warning_or_watch == "WARNING",
+						severity=properties.get("severity"),
+						urgency=properties.get("urgency"),
+						certainty=properties.get("certainty"),
+						effective=properties.get("effective"),
+						expires=properties.get("expires"),
+						headline=properties.get("headline"),
+						description=properties.get("description"), 
+						key=vtec.extract_vtec_key(properties),
+						affected_zones_ugc_endpoints=properties.get("affectedZones", []),
+						affected_zones_raw_ugc_codes=properties.get("geocode", {}).get("UGC", []),
+						raw_vtec=properties.get("parameters", {}).get("VTEC", [""])[0],
+						expected_end=properties.get("parameters", {}).get("eventEndingTime", None)[0],
+						referenced_alerts=properties.get("references", [])
+						)
+					alerts.append(alert)
 			
-			# Return filtered results
+			alerts_json = [alert.model_dump() for alert in alerts]
 			result = {
-				"features": filtered_features,
-				"total_filtered": len(filtered_features),
-				"timestamp": datetime.utcnow().isoformat()
+				"filtered_alerts": alerts_json,
+				"total_count": len(alerts_json)
 			}
 			
-			return str(result)
+			return json.dumps(result, indent=2)
 			
 		except Exception as e:
 			return f"Error: {str(e)}"

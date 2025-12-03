@@ -1,6 +1,7 @@
 """
 Custom CrewAI tool for accessing active episodes and events from state.
 """
+import json
 from typing import Type
 from pydantic import BaseModel, Field
 from crewai.tools import BaseTool
@@ -77,7 +78,6 @@ class GetActiveEpisodesAndEventsTool(BaseTool):
 				# Return just keys
 				episodes_data = [
 					{
-						"episode_id": ep.episode_id,
 						"episode_key": ep.episode_key
 					}
 					for ep in active_episodes
@@ -93,11 +93,9 @@ class GetActiveEpisodesAndEventsTool(BaseTool):
 			result = {
 				"active_episodes": episodes_data,
 				"active_events": events_data,
-				"episode_count": len(active_episodes),
-				"event_count": len(active_events)
 			}
 			
-			return str(result)
+			return json.dumps(result, indent=2)
 			
 		except Exception as e:
 			return f"Error accessing state: {str(e)}"

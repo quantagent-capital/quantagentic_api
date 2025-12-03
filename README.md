@@ -120,7 +120,39 @@ A FastAPI-based API for managing disaster episodes and events with AI agents pow
    celery -A app.celery_app worker --beat --loglevel=info
    ```
    
-   This starts both the Celery worker and the CeleryBeat scheduler. The disaster polling agent will run every 5 minutes.
+   This starts both the Celery worker and the CeleryBeat scheduler. The disaster polling agent will run immediately on startup, then every 5 minutes.
+   
+   **Viewing Task Output:**
+   - The task will log detailed output to the console with `INFO` level logging
+   - To see even more detail, use `--loglevel=debug`:
+     ```bash
+     celery -A app.celery_app worker --beat --loglevel=debug
+     ```
+   - To manually trigger the task for testing:
+     ```bash
+     celery -A app.celery_app call app.tasks.disaster_polling_task
+     ```
+   - To monitor task execution in real-time, use Flower (optional):
+     ```bash
+     pip install flower
+     celery -A app.celery_app flower
+     ```
+     Then visit `http://localhost:5555` in your browser
+
+   **Debugging in Cursor IDE:**
+   - Open the Run and Debug panel (Cmd+Shift+D / Ctrl+Shift+D)
+   - Select one of these debug configurations:
+     - **Debug: Disaster Polling Task (Direct)** - Runs the task directly without Celery (best for debugging task logic) ⭐ Recommended
+     - **Debug: FastAPI Server** - Starts the FastAPI server with hot-reload
+     - **Debug: Celery Worker with Auto Task** - Queues the disaster polling task and waits for a worker to process it
+   - Set breakpoints in your code and press F5 to start debugging
+   - You can also run debug scripts directly:
+     ```bash
+     python debug/task_direct.py        # Run task directly (no Celery) ⭐ Recommended
+     python debug/celery_with_task.py   # Queue task for Celery worker
+     python debug/test_setup.py         # Verify debug setup
+     ```
+   - See `debug/README.md` for detailed debugging instructions
 
 8. **Access the API documentation**:
    - Swagger UI: `http://localhost:8000/docs`
@@ -161,6 +193,15 @@ quantagentic_api/
 │   │   │   ├── state_tool.py
 │   │   │   └── forecast_zone_tool.py
 │   │   ├── utils/                   # Shared utilities
+│   ├── tasks/                       # Celery tasks
+├── debug/                           # Debug scripts for local testing
+│   ├── task_direct.py              # Run task directly (no Celery) ⭐ Recommended
+│   ├── celery_with_task.py         # Queue task for Celery worker
+│   ├── test_setup.py               # Verify debug setup
+│   └── README.md                   # Debugging guide
+├── tests/                           # Unit and integration tests
+├── .vscode/                         # VS Code/Cursor IDE debug configurations
+│   └── launch.json                 # Debug launch configurations
 │   │   │   ├── vtec.py              # VTEC key generation
 │   │   │   ├── polygon.py           # Polygon overlap detection
 │   │   │   └── nws_event_types.py   # NWS event type codes

@@ -18,6 +18,7 @@ NWS_WARNING_CODES: Dict[str, str] = {
 	"HUW": "Hurricane Warning",
 	"SVR": "Severe Thunderstorm Warning",
 	"SMW": "Special Marine Warning",
+	"MAW": "Special Marine Warning",
 	"SSW": "Storm Surge Warning",
 	"TOR": "Tornado Warning",
 	"TSW": "Tsunami Warning",
@@ -27,6 +28,7 @@ NWS_WARNING_CODES: Dict[str, str] = {
 	"FRW": "Fire Warning",
 	"EQW": "Earthquake Warning",
 	"VOW": "Volcano Warning",
+	"SQW": "Snow Squall Warning"
 }
 
 # Valid event type codes for watches (3-letter codes)

@@ -20,93 +20,45 @@ def extract_vtec_key(alert_properties: Dict[str, Any]) -> Optional[str]:
 		parameters = alert_properties.get("parameters", {})
 		
 		# Look for VTEC in various possible locations
-		vtec_strings = []
-		
-		# Check parameters.vtec array
-		if "vtec" in parameters:
-			vtec_strings.extend(parameters["vtec"])
-		
-		# Check if VTEC is directly in properties
-		if "vtec" in alert_properties:
-			if isinstance(alert_properties["vtec"], list):
-				vtec_strings.extend(alert_properties["vtec"])
-			else:
-				vtec_strings.append(alert_properties["vtec"])
+		vtec_string = parameters.get("VTEC", [""])[0]
 		
 		# Parse first valid VTEC string
-		for vtec_str in vtec_strings:
-			if isinstance(vtec_str, str) and len(vtec_str) > 0:
-				# VTEC format: /O.NEW.KOFF.TO.W.0015.240101T1200Z-240101T1800Z/
-				# We need: Office (OFF) + Phenomena (TO) + Significance (W) + ETN (0015) + Year (24)
-				parts = vtec_str.strip("/").split(".")
-				if len(parts) >= 6:
-					office = parts[2]  # e.g., "OFF"
-					phenomena = parts[3]  # e.g., "TO"
-					significance = parts[4]  # e.g., "W"
-					etn = parts[5]  # e.g., "0015"
-					
-					# Extract year from timestamp (last part)
-					timestamp = parts[6] if len(parts) > 6 else ""
-					year = timestamp[:2] if len(timestamp) >= 2 else ""
-					
-					# Construct key: Office + Phenomena + Significance + ETN + Year
-					key = f"{office}{phenomena}{significance}{etn}{year}"
-					return key
+		parts = vtec_string.strip("/").split(".")
+		if len(parts) >= 6:
+			office = parts[2]  # e.g., "OFF"
+			phenomena = parts[3]  # e.g., "TO"
+			etn = parts[5]  # e.g., "0015"
+			year = parts[6][:2]  # e.g., "24"
 		
-		# Fallback: try to construct from available fields
-		office = alert_properties.get("senderName", "").upper()[:3]
-		event = alert_properties.get("event", "").upper()
-		
-		# Map event to phenomena code
-		event_to_phenomena = {
-			"TORNADO WARNING": "TO",
-			"SEVERE THUNDERSTORM WARNING": "SV",
-			"FLASH FLOOD WARNING": "FF",
-			"FLOOD WARNING": "FL",
-			"HURRICANE WARNING": "HU",
-			"TROPICAL STORM WARNING": "TR",
-			"WINTER STORM WARNING": "WS",
-			"BLIZZARD WARNING": "BZ",
-			"EXTREME WIND WARNING": "EW",
-			"COASTAL FLOOD WARNING": "CF",
-			"DUST STORM WARNING": "DS",
-			"HIGH WIND WARNING": "HW",
-			"SPECIAL MARINE WARNING": "SM",
-			"STORM SURGE WARNING": "SS",
-			"TSUNAMI WARNING": "TS",
-			"AVALANCHE WARNING": "AV",
-			"FIRE WARNING": "FR",
-			"EARTHQUAKE WARNING": "EQ",
-			"VOLCANO WARNING": "VO",
-			"TORNADO WATCH": "TO",
-			"SEVERE THUNDERSTORM WATCH": "SV",
-			"FLOOD WATCH": "FA",
-			"HURRICANE WATCH": "HU",
-			"TROPICAL STORM WATCH": "TR",
-			"WINTER STORM WATCH": "WS"
-		}
-		
-		phenomena = event_to_phenomena.get(event, event[:2] if len(event) >= 2 else "XX")
-		
-		# Determine significance: W = Warning, A = Watch
-		message_type = alert_properties.get("messageType", "").upper()
-		significance = "W" if message_type == "WARNING" else "A" if message_type == "WATCH" else "X"
-		
-		# Try to get ETN from geocode
-		geocode = alert_properties.get("geocode", {})
-		etn = geocode.get("eventTrackingNumber", ["0000"])[0] if isinstance(geocode.get("eventTrackingNumber"), list) else "0000"
-		
-		# Get year from effective date
-		effective = alert_properties.get("effective", "")
-		year = effective[:2] if len(effective) >= 2 else "24"
-		
-		key = f"{office}{phenomena}{significance}{etn}{year}"
-		return key
-		
-	except Exception as e:
-		# If all else fails, return None
-		return None
+		significance = get_warning_or_watch(alert_properties)  # e.g., "W"
+	
+		return f"{office}-{phenomena}-{significance}-{etn}-{year}"
+	except ValueError as e:
+		raise ValueError(f"Error extracting VTEC key from alert properties: {e}")
 
+# Get whether it is a warning or watch
+def get_warning_or_watch(alert_properties: Dict[str, Any]) -> bool:
+	"""
+	Get whether it is a warning or watch from alert properties.
+	
+	Args:
+		alert_properties: Properties dictionary from NWS alert feature
+		
+	Returns:
+		True if warning, False if watch
+	"""
+	# Check VTEC for message type
+	parameters = alert_properties.get("parameters", {})
+	if "VTEC" in parameters:
+		vtec_string = parameters["VTEC"][0]
+		parts = vtec_string.strip("/").split(".")
+		if len(parts) >= 2:
+			message_type = parts[4].upper()
+			if message_type == "W":
+				return "WARNING"
+			elif message_type == "A":
+				return "WATCH"
+	return None
 
 def get_message_type(alert_properties: Dict[str, Any]) -> str:
 	"""
@@ -121,13 +73,10 @@ def get_message_type(alert_properties: Dict[str, Any]) -> str:
 	# Check VTEC for message type
 	parameters = alert_properties.get("parameters", {})
 	if "vtec" in parameters:
-		vtec_strings = parameters["vtec"]
-		for vtec_str in vtec_strings:
-			if isinstance(vtec_str, str):
-				# VTEC format: /O.NEW.KOFF.TO.W.0015.240101T1200Z-240101T1800Z/
-				parts = vtec_str.strip("/").split(".")
-				if len(parts) >= 2:
-					return parts[1].upper()  # NEW, CON, CANCEL, EXP, etc.
+		vtec_string = parameters["vtec"][0]
+		parts = vtec_string.strip("/").split(".")
+		if len(parts) >= 2:
+			return parts[1].upper()  # NEW, CON, CANCEL, EXP, etc.
 	
 	return "NEW"  # Default
 
