@@ -2,6 +2,25 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Debug: Railway Local (Full Stack)",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/debug/railway_local.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "python": "${workspaceFolder}/venv/bin/python",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "PYTHONNOUSERSITE": "1",
+                "PORT": "8000",
+                "LANGCHAIN_TRACING_V2": "false",
+                "LANGCHAIN_ENDPOINT": "",
+                "LANGCHAIN_API_KEY": "",
+                "LANGCHAIN_PROJECT": "",
+                "LOG_LEVEL": "INFO"
+            }
+        },
+        {
             "name": "Debug: Disaster Polling Task (Direct)",
             "type": "python",
             "request": "launch",
@@ -35,23 +54,6 @@
                 "PYTHONPATH": "${workspaceFolder}"
             },
             "python": "${workspaceFolder}/venv/bin/python3"
-        },
-        {
-            "name": "Debug: Celery Worker with Auto Task",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/debug/celery_with_task.py",
-            "console": "integratedTerminal",
-            "justMyCode": false,
-            "python": "${workspaceFolder}/venv/bin/python3",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}",
-                "PYTHONNOUSERSITE": "1",
-                "LANGCHAIN_TRACING_V2": "false",
-                "LANGCHAIN_ENDPOINT": "",
-                "LANGCHAIN_API_KEY": "",
-                "LANGCHAIN_PROJECT": ""
-            }
         }
     ]
 }

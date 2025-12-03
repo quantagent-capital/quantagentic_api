@@ -14,7 +14,38 @@ There's a known compatibility issue between `langsmith` and Pydantic v2 when usi
 
 ## Debug Configurations
 
-### 1. Disaster Polling Task (Direct) ⭐ **Recommended**
+### 1. Railway Local (Full Stack) ⭐ **Recommended for Production-Like Debugging**
+Mimics Railway's exact startup process: starts Celery worker with beat scheduler, then FastAPI server. Both run simultaneously and are fully debuggable.
+
+**Best for**: Debugging the complete application stack as it runs in Railway
+
+**Features**:
+- ✅ Celery worker with beat scheduler (runs in background, debuggable)
+- ✅ FastAPI server (runs in foreground, debuggable)
+- ✅ Exact same startup sequence as Railway
+- ✅ Both services can be debugged simultaneously
+- ✅ Celery beat automatically schedules tasks every 5 minutes
+
+**Usage in Cursor IDE**: Select "Debug: Railway Local (Full Stack)" from the debug configurations
+
+**Usage from command line**:
+```bash
+# Make sure venv is activated
+source venv/bin/activate
+python debug/railway_local.py
+```
+
+**What it does**:
+1. Starts Celery worker with beat scheduler (background process)
+2. Waits 3 seconds for Celery to initialize
+3. Verifies Celery started successfully
+4. Starts FastAPI server on port 8000 (foreground process)
+5. Streams Celery logs to console with `[CELERY]` prefix
+6. Both processes are debuggable with breakpoints
+
+**Note**: This matches Railway's `railway_startup.sh` exactly, so you can debug issues that only appear in production.
+
+### 2. Disaster Polling Task (Direct)
 Runs the disaster polling task directly without Celery. This is the simplest way to debug task logic.
 
 **Best for**: Debugging crew execution, tools, and business logic
@@ -28,7 +59,7 @@ source venv/bin/activate
 python debug/task_direct.py
 ```
 
-### 2. FastAPI Server
+### 3. FastAPI Server
 Starts the FastAPI server with hot-reload enabled.
 
 **Usage in Cursor IDE**: Select "Debug: FastAPI Server" from the debug configurations
@@ -38,7 +69,7 @@ Starts the FastAPI server with hot-reload enabled.
 hypercorn main:app --reload --bind 0.0.0.0:8000
 ```
 
-### 3. Celery Worker with Auto Task
+### 4. Celery Worker with Auto Task
 Queues the disaster polling task and waits for a Celery worker to process it. You'll need to start a Celery worker separately in another terminal.
 
 **Best for**: Testing full Celery task execution with worker processing

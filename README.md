@@ -142,14 +142,14 @@ A FastAPI-based API for managing disaster episodes and events with AI agents pow
    **Debugging in Cursor IDE:**
    - Open the Run and Debug panel (Cmd+Shift+D / Ctrl+Shift+D)
    - Select one of these debug configurations:
-     - **Debug: Disaster Polling Task (Direct)** - Runs the task directly without Celery (best for debugging task logic) ⭐ Recommended
+     - **Debug: Railway Local (Full Stack)** - Runs both Celery worker and FastAPI server (matches Railway exactly) ⭐ Recommended for production-like debugging
+     - **Debug: Disaster Polling Task (Direct)** - Runs the task directly without Celery (best for debugging task logic)
      - **Debug: FastAPI Server** - Starts the FastAPI server with hot-reload
-     - **Debug: Celery Worker with Auto Task** - Queues the disaster polling task and waits for a worker to process it
    - Set breakpoints in your code and press F5 to start debugging
    - You can also run debug scripts directly:
      ```bash
-     python debug/task_direct.py        # Run task directly (no Celery) ⭐ Recommended
-     python debug/celery_with_task.py   # Queue task for Celery worker
+     python debug/railway_local.py     # Run full stack (Celery + FastAPI) ⭐ Recommended
+     python debug/task_direct.py        # Run task directly (no Celery)
      python debug/test_setup.py         # Verify debug setup
      ```
    - See `debug/README.md` for detailed debugging instructions
@@ -195,8 +195,8 @@ quantagentic_api/
 │   │   ├── utils/                   # Shared utilities
 │   ├── tasks/                       # Celery tasks
 ├── debug/                           # Debug scripts for local testing
-│   ├── task_direct.py              # Run task directly (no Celery) ⭐ Recommended
-│   ├── celery_with_task.py         # Queue task for Celery worker
+│   ├── railway_local.py            # Run full stack (Celery + FastAPI) ⭐ Recommended
+│   ├── task_direct.py              # Run task directly (no Celery)
 │   ├── test_setup.py               # Verify debug setup
 │   └── README.md                   # Debugging guide
 ├── tests/                           # Unit and integration tests

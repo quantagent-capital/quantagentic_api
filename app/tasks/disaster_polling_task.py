@@ -28,7 +28,6 @@ def disaster_polling_task(self):
 		result = executor.execute()
 		logger.info("=" * 80)
 		logger.info(f"Disaster polling task completed successfully")
-		logger.info(f"Result: {result}")
 		logger.info("=" * 80)
 		return result
 	except Exception as e:

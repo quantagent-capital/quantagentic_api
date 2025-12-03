@@ -41,7 +41,6 @@ class DisasterPollingExecutor(BaseExecutor):
 			
 			result = crew.kickoff()
 			logger.info(f"Crew execution completed. Result type: {type(result)}")
-			
 			# Update last poll time
 			state.last_disaster_poll_time = datetime.now(timezone.utc)
 			logger.info(f"Updated last poll time: {state.last_disaster_poll_time.isoformat()}")
