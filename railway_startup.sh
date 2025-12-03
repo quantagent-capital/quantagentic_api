@@ -9,8 +9,10 @@ echo "Starting QuantAgentic API services..."
 echo "=========================================="
 
 # Start Celery worker with beat in the background
+# Note: Celery will use the logging configuration from app.logging_config
+# which outputs structured JSON to stdout (not stderr)
 echo "Starting Celery worker with beat scheduler..."
-celery -A app.celery_app worker --beat --loglevel=info &
+celery -A app.celery_app worker --beat --loglevel=info --logfile=/dev/stdout &
 CELERY_PID=$!
 
 # Function to cleanup on exit
