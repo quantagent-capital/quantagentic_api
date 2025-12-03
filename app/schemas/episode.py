@@ -5,6 +5,7 @@ from app.schemas.location import Location
 
 class Episode(BaseSchema):
 	episode_id: int
+	episode_key: str
 	start_date: datetime
 	end_date: Optional[datetime] = None
 	total_damage: Optional[int] = None

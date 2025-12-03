@@ -1,5 +1,12 @@
 from fastapi import FastAPI
 from app.controllers import episode_controller, event_controller
+from app.logging_config import setup_logging
+import os
+
+# Setup structured JSON logging to stdout (for Railway)
+# This ensures logs are properly categorized instead of all showing as errors
+log_level = os.getenv("LOG_LEVEL", "INFO")
+setup_logging(level=log_level)
 
 app = FastAPI(
 	title="QuantAgentic API",
