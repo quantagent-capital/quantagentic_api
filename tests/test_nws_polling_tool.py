@@ -288,4 +288,204 @@ class TestNWSPollingTool:
 			# If locations are extracted, they should be Location objects
 			if len(alert.locations) > 0:
 				assert isinstance(alert.locations[0], Location)
+	
+	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@pytest.mark.asyncio
+	async def test_async_poll_expected_end_from_event_ending_time(self, mock_client_class, tool):
+		"""Test that expected_end uses eventEndingTime when available."""
+		mock_client = AsyncMock()
+		response = {
+			"features": [
+				{
+					"properties": {
+						"id": "test1",
+						"severity": "Extreme",
+						"urgency": "Immediate",
+						"certainty": "Observed",
+						"status": "Actual",
+						"eventCode": {"NationalWeatherService": ["TOR"]},
+						"effective": "2024-01-15T10:00:00-00:00",
+						"expires": "2024-01-15T12:00:00-00:00",
+						"ends": "2024-01-15T11:30:00-00:00",
+						"affectedZones": [],
+						"geocode": {"UGC": [], "SAME": []},
+						"parameters": {
+							"VTEC": ["/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"],
+							"eventEndingTime": ["2024-01-15T11:00:00-00:00"]  # Should use this
+						},
+						"references": []
+					},
+					"geometry": None
+				}
+			]
+		}
+		mock_client.get = AsyncMock(return_value=response)
+		mock_client_class.return_value = mock_client
+		
+		result = await tool._async_poll()
+		
+		if len(result) > 0:
+			alert = result[0]
+			# Should use eventEndingTime, not ends or expires
+			assert alert.expected_end == "2024-01-15T11:00:00-00:00"
+	
+	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@pytest.mark.asyncio
+	async def test_async_poll_expected_end_fallback_to_ends(self, mock_client_class, tool):
+		"""Test that expected_end falls back to ends when eventEndingTime is None."""
+		mock_client = AsyncMock()
+		response = {
+			"features": [
+				{
+					"properties": {
+						"id": "test1",
+						"severity": "Extreme",
+						"urgency": "Immediate",
+						"certainty": "Observed",
+						"status": "Actual",
+						"eventCode": {"NationalWeatherService": ["TOR"]},
+						"effective": "2024-01-15T10:00:00-00:00",
+						"expires": "2024-01-15T12:00:00-00:00",
+						"ends": "2024-01-15T11:30:00-00:00",  # Should use this
+						"affectedZones": [],
+						"geocode": {"UGC": [], "SAME": []},
+						"parameters": {
+							"VTEC": ["/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"],
+							"eventEndingTime": None  # None, should fallback to ends
+						},
+						"references": []
+					},
+					"geometry": None
+				}
+			]
+		}
+		mock_client.get = AsyncMock(return_value=response)
+		mock_client_class.return_value = mock_client
+		
+		result = await tool._async_poll()
+		
+		if len(result) > 0:
+			alert = result[0]
+			# Should use ends, not expires
+			assert alert.expected_end == "2024-01-15T11:30:00-00:00"
+	
+	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@pytest.mark.asyncio
+	async def test_async_poll_expected_end_fallback_to_expires(self, mock_client_class, tool):
+		"""Test that expected_end falls back to expires when eventEndingTime and ends are None."""
+		mock_client = AsyncMock()
+		response = {
+			"features": [
+				{
+					"properties": {
+						"id": "test1",
+						"severity": "Extreme",
+						"urgency": "Immediate",
+						"certainty": "Observed",
+						"status": "Actual",
+						"eventCode": {"NationalWeatherService": ["TOR"]},
+						"effective": "2024-01-15T10:00:00-00:00",
+						"expires": "2024-01-15T12:00:00-00:00",  # Should use this
+						"ends": None,  # None
+						"affectedZones": [],
+						"geocode": {"UGC": [], "SAME": []},
+						"parameters": {
+							"VTEC": ["/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"],
+							"eventEndingTime": None  # None
+						},
+						"references": []
+					},
+					"geometry": None
+				}
+			]
+		}
+		mock_client.get = AsyncMock(return_value=response)
+		mock_client_class.return_value = mock_client
+		
+		result = await tool._async_poll()
+		
+		if len(result) > 0:
+			alert = result[0]
+			# Should use expires as final fallback
+			assert alert.expected_end == "2024-01-15T12:00:00-00:00"
+	
+	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@pytest.mark.asyncio
+	async def test_async_poll_expected_end_all_none(self, mock_client_class, tool):
+		"""Test that expected_end is None when eventEndingTime, ends, and expires are all None."""
+		mock_client = AsyncMock()
+		response = {
+			"features": [
+				{
+					"properties": {
+						"id": "test1",
+						"severity": "Extreme",
+						"urgency": "Immediate",
+						"certainty": "Observed",
+						"status": "Actual",
+						"eventCode": {"NationalWeatherService": ["TOR"]},
+						"effective": "2024-01-15T10:00:00-00:00",
+						"expires": None,  # None
+						"ends": None,  # None
+						"affectedZones": [],
+						"geocode": {"UGC": [], "SAME": []},
+						"parameters": {
+							"VTEC": ["/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"],
+							"eventEndingTime": None  # None
+						},
+						"references": []
+					},
+					"geometry": None
+				}
+			]
+		}
+		mock_client.get = AsyncMock(return_value=response)
+		mock_client_class.return_value = mock_client
+		
+		result = await tool._async_poll()
+		
+		if len(result) > 0:
+			alert = result[0]
+			# Should be None when all fallbacks are None
+			assert alert.expected_end is None
+	
+	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@pytest.mark.asyncio
+	async def test_async_poll_expected_end_empty_event_ending_time_list(self, mock_client_class, tool):
+		"""Test that expected_end falls back when eventEndingTime is an empty list."""
+		mock_client = AsyncMock()
+		response = {
+			"features": [
+				{
+					"properties": {
+						"id": "test1",
+						"severity": "Extreme",
+						"urgency": "Immediate",
+						"certainty": "Observed",
+						"status": "Actual",
+						"eventCode": {"NationalWeatherService": ["TOR"]},
+						"effective": "2024-01-15T10:00:00-00:00",
+						"expires": "2024-01-15T12:00:00-00:00",
+						"ends": "2024-01-15T11:30:00-00:00",  # Should use this
+						"affectedZones": [],
+						"geocode": {"UGC": [], "SAME": []},
+						"parameters": {
+							"VTEC": ["/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"],
+							"eventEndingTime": []  # Empty list, should fallback
+						},
+						"references": []
+					},
+					"geometry": None
+				}
+			]
+		}
+		mock_client.get = AsyncMock(return_value=response)
+		mock_client_class.return_value = mock_client
+		
+		result = await tool._async_poll()
+		
+		if len(result) > 0:
+			alert = result[0]
+			# Should use ends when eventEndingTime is empty list
+			assert alert.expected_end == "2024-01-15T11:30:00-00:00"
 

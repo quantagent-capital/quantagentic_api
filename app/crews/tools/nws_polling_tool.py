@@ -80,6 +80,17 @@ class NWSPollingTool:
 					# Extract geometry from the feature (returns list of locations, one per SAME code)
 					locations = await self._extract_location_meta(feature, alert_key, client)
 					
+					# Determine expected_end with fallback chain:
+					# 1. Try eventEndingTime from parameters
+					# 2. Fallback to ends property
+					# 3. Fallback to expires property
+					event_ending_time_list = properties.get("parameters", {}).get("eventEndingTime")
+					if event_ending_time_list and len(event_ending_time_list) > 0:
+						event_ending_time = event_ending_time_list[0]
+					else:
+						event_ending_time = None
+					expected_end = event_ending_time or properties.get("ends") or properties.get("expires")
+					
 					alert = FilteredNWSAlert(
 						alert_id=properties.get("id"),
 						event_type=event_name,
@@ -97,7 +108,7 @@ class NWSPollingTool:
 						affected_zones_ugc_endpoints=properties.get("affectedZones", []),
 						affected_zones_raw_ugc_codes=properties.get("geocode", {}).get("UGC", []),
 						raw_vtec=properties.get("parameters", {}).get("VTEC", [""])[0],
-						expected_end=(properties.get("parameters", {}).get("eventEndingTime") or [None])[0],
+						expected_end=expected_end,
 						referenced_alerts=properties.get("references", []),
 						locations=locations
 						)
