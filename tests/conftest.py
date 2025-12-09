@@ -12,7 +12,6 @@ def mock_state():
 	state = Mock(spec=State)
 	state.active_events = []
 	state.active_episodes = []
-	state.last_disaster_poll_time = None
 	return state
 
 

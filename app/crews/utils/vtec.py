@@ -2,6 +2,7 @@
 Utilities for working with VTEC (Valid Time Event Code) from NWS alerts.
 """
 from typing import Optional, Dict, Any
+from datetime import datetime, timezone
 
 
 def extract_vtec_key(alert_properties: Dict[str, Any]) -> Optional[str]:
@@ -28,7 +29,13 @@ def extract_vtec_key(alert_properties: Dict[str, Any]) -> Optional[str]:
 			office = parts[2]  # e.g., "OFF"
 			phenomena = parts[3]  # e.g., "TO"
 			etn = parts[5]  # e.g., "0015"
-			year = parts[6][:2]  # e.g., "24"
+			
+			# Extract year from date range in parts[6]
+			# Format: YYMMDDTHHmmZ-YYMMDDTHHmmZ or just YYMMDDTHHmmZ
+			date_range = parts[6]
+			year = _extract_year_from_vtec_date(date_range)
+		else:
+			raise ValueError("VTEC string does not have enough parts")
 		
 		significance = get_warning_or_watch(alert_properties)  # e.g., "W"
 	
@@ -72,11 +79,52 @@ def get_message_type(alert_properties: Dict[str, Any]) -> str:
 	"""
 	# Check VTEC for message type
 	parameters = alert_properties.get("parameters", {})
-	if "vtec" in parameters:
-		vtec_string = parameters["vtec"][0]
+	if "VTEC" in parameters:
+		vtec_string = parameters["VTEC"][0]
 		parts = vtec_string.strip("/").split(".")
 		if len(parts) >= 2:
 			return parts[1].upper()  # NEW, CON, CANCEL, EXP, etc.
 	
 	return "NEW"  # Default
+
+
+def _extract_year_from_vtec_date(date_range: str) -> str:
+	"""
+	Extract year from VTEC date range string.
+	
+	Format: YYMMDDTHHmmZ-YYMMDDTHHmmZ or YYMMDDTHHmmZ
+	If first date is all zeros, use second date.
+	If neither are valid, use current UTC year.
+	
+	Args:
+		date_range: Date range string from VTEC (e.g., "000000T0000Z-251212T2203Z")
+		
+	Returns:
+		Two-digit year string (e.g., "25")
+	"""
+	# Split by '-' to get start and end dates
+	if "-" in date_range:
+		start_date_str, end_date_str = date_range.split("-", 1)
+	else:
+		# Single date format
+		start_date_str = date_range
+		end_date_str = None
+	
+	# Check if first date is valid (not all zeros)
+	# Format: YYMMDDTHHmmZ, we need first 2 digits for year
+	if len(start_date_str) >= 2:
+		start_year = start_date_str[:2]
+		# Check if it's all zeros or invalid
+		if start_year != "00" and start_year.isdigit():
+			return start_year  # Return 2-digit year
+	
+	# First date invalid, try second date
+	if end_date_str and len(end_date_str) >= 2:
+		end_year = end_date_str[:2]
+		if end_year != "00" and end_year.isdigit():
+			return end_year  # Return 2-digit year
+	
+	# Neither date valid, use current UTC year
+	current_year = datetime.now(timezone.utc).year
+	return str(current_year)[-2:]
 

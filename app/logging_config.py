@@ -4,6 +4,7 @@ Outputs to stdout so Railway can properly categorize log levels.
 """
 import json
 import logging
+import os
 import sys
 from datetime import datetime
 from typing import Any, Dict
@@ -49,7 +50,19 @@ def setup_logging(level: str = "INFO") -> None:
 	
 	Args:
 		level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+	
+	Note:
+		If PYTHONDEBUG is set, this function will skip setup to allow
+		debug mode logging configuration to take precedence (e.g., in railway_local.py).
 	"""
+	# Check if we're in debug mode - if so, skip setup to preserve debug logging config
+	is_debug_mode = os.getenv("PYTHONDEBUG", "").lower() in ("1", "true")
+	if is_debug_mode:
+		# In debug mode, assume logging is already configured (e.g., by railway_local.py)
+		# Just ensure app loggers are set to appropriate levels
+		logging.getLogger("app").setLevel(getattr(logging, level.upper(), logging.INFO))
+		return
+	
 	# Get the root logger
 	root_logger = logging.getLogger()
 	root_logger.setLevel(getattr(logging, level.upper(), logging.INFO))

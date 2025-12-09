@@ -53,4 +53,15 @@ class ServiceError(QuantAgentException):
 			status_code=status_code,
 			detail=message
 		)
-
+	
+class ConflictError(QuantAgentException):
+	"""
+	Exception raised when a resource conflict occurs.
+	Maps to HTTP 409 Conflict.
+	"""
+	def __init__(self, message: str, status_code: int = status.HTTP_409_CONFLICT):
+		super().__init__(
+			message=message,
+			status_code=status_code,
+			detail=message
+		)

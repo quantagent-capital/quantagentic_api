@@ -2,6 +2,7 @@ from typing import List, Optional
 from datetime import datetime
 from app.schemas.event import Event
 from app.schemas.episode import Episode
+from app.redis_client import quantagent_redis
 
 class State:
 	"""
@@ -31,6 +32,8 @@ class State:
 	"""
 	
 	_instance: Optional['State'] = None
+	REDIS_EVENT_KEY_PREFIX = "event:"
+	REDIS_EPISODE_KEY_PREFIX = "episode:"
 	
 	def __new__(cls):
 		if cls._instance is None:
@@ -43,35 +46,84 @@ class State:
 			return
 		
 		# Private attributes (prefixed with _) store the actual data
-		self._active_events: List[Event] = []
-		self._active_episodes: List[Episode] = []
-		self._last_disaster_poll_time: Optional[datetime] = None
 		self._initialized = True
 	
 	@property
-	def active_events(self) -> List[Event]:
+	def events(self) -> List[Event]:
 		"""
-		Getter for active_events.
-		Usage: events = state.active_events
+		Getter for events.
+		Fetches all events from Redis with prefix 'event:' and filters by is_active=True.
+		Usage: events = state.events
 		"""
-		return self._active_events
+		# Get all keys matching the event pattern
+		event_keys = quantagent_redis.get_all_keys(f"{State.REDIS_EVENT_KEY_PREFIX}*")
+		
+		# Fetch all events from Redis and convert to Event objects
+		events = []
+		for key in event_keys:
+			try:
+				event_dict = quantagent_redis.read(key)
+				if event_dict is None:
+					continue
+				
+				# Convert dictionary to Event object
+				event = Event.from_dict(event_dict)
+				events.append(event)
+			except Exception as e:
+				# Log error but continue processing other events
+				import logging
+				logger = logging.getLogger(__name__)
+				logger.warning(f"Failed to load event from Redis key {key}: {str(e)}")
+				continue
+		
+		return events
+
+	def add_event(self, event: Event):
+		"""
+		Add an event to both Redis and in-memory collection.
+		
+		Args:
+			event: Event object
+		"""
+		redis_key = f"{State.REDIS_EVENT_KEY_PREFIX}{event.event_key}"
+		quantagent_redis.create(redis_key, event.to_dict())
 	
-	@active_events.setter
-	def active_events(self, value: List[Event]):
-		"""
-		Setter for active_events.
-		Usage: state.active_events = [event1, event2]
-		"""
-		self._active_events = value
+	def remove_event(self, event_key: str):
+		"""Remove an event by key."""
+		redis_key = f"{State.REDIS_EVENT_KEY_PREFIX}{event_key}"
+		quantagent_redis.delete(redis_key)
+
+	def update_event(self, event: Event):
+		"""Update an event in both Redis and in-memory collection."""
+		redis_key = f"{State.REDIS_EVENT_KEY_PREFIX}{event.event_key}"
+		quantagent_redis.update(redis_key, event.to_dict())
 	
-	def add_active_event(self, event: Event):
-		"""Add an active event."""
-		if event not in self._active_events:
-			self._active_events.append(event)
-	
-	def remove_active_event(self, event_key: str):
-		"""Remove an active event by key."""
-		self._active_events = [e for e in self._active_events if e.event_key != event_key]
+	def event_exists(self, event_key: str) -> bool:
+		"""
+		Check if an event exists with the given event_key.
+		
+		Args:
+			event_key: Event key to check
+			
+		Returns:
+			True if an event exists, False otherwise
+		"""
+		# Check Redis for the event using standardized key creation
+		redis_key = f"{State.REDIS_EVENT_KEY_PREFIX}{event_key}"
+		event_dict = quantagent_redis.read(redis_key)
+		
+		if event_dict is None:
+			return False
+		
+		return True
+
+	def get_event(self, event_key: str) -> Optional[Event]:
+		"""Get an event by key."""
+		redis_key = f"{State.REDIS_EVENT_KEY_PREFIX}{event_key}"
+		event_dict = quantagent_redis.read(redis_key)
+		if event_dict is None:
+			return None
+		return Event.from_dict(event_dict)
 	
 	@property
 	def active_episodes(self) -> List[Episode]:
@@ -79,40 +131,19 @@ class State:
 		Getter for active_episodes.
 		Usage: episodes = state.active_episodes
 		"""
-		return self._active_episodes
+		pass
+		# TODO return self._active_episodes
 	
-	@active_episodes.setter
-	def active_episodes(self, value: List[Episode]):
-		"""
-		Setter for active_episodes.
-		Usage: state.active_episodes = [episode1, episode2]
-		"""
-		self._active_episodes = value
-	
+
 	def add_active_episode(self, episode: Episode):
 		"""Add an active episode."""
-		if episode not in self._active_episodes:
-			self._active_episodes.append(episode)
+		pass
+		# TODO add episode to Redis
 	
 	def remove_active_episode(self, episode_id: int):
 		"""Remove an active episode by ID."""
-		self._active_episodes = [e for e in self._active_episodes if e.episode_id != episode_id]
-	
-	@property
-	def last_disaster_poll_time(self) -> Optional[datetime]:
-		"""
-		Getter for last_disaster_poll_time.
-		Usage: poll_time = state.last_disaster_poll_time
-		"""
-		return self._last_disaster_poll_time
-	
-	@last_disaster_poll_time.setter
-	def last_disaster_poll_time(self, value: Optional[datetime]):
-		"""
-		Setter for last_disaster_poll_time.
-		Usage: state.last_disaster_poll_time = datetime.now()
-		"""
-		self._last_disaster_poll_time = value
+		pass
+		# TODO remove episode from Redis
 
 # Global state instance
 state = State()

@@ -4,6 +4,7 @@ Structured Pydantic output models for disaster polling tasks.
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from datetime import datetime
+from app.schemas.location import Location
 
 
 class FilteredNWSAlert(BaseModel):
@@ -26,13 +27,7 @@ class FilteredNWSAlert(BaseModel):
 	headline: Optional[str] = Field(default=None, description="Alert headline")
 	description: Optional[str] = Field(default=None, description="Alert description")
 	raw_vtec: str = Field(description="Raw VTEC string from the alert")
-
-class PolledNWSAlertsOutput(BaseModel):
-	"""Structured output from NWS polling task."""
-	filtered_alerts: List[FilteredNWSAlert] = Field(
-		description="List of filtered NWS alerts that meet severity/urgency/certainty criteria"
-	)
-	total_count: int = Field(description="Total number of filtered alerts")
+	locations: List[Location] = Field(default_factory=list, description="List of location geometries extracted from the alert feature, one per SAME code")
 
 class ClassifiedAlertsOutput(BaseModel):
 	"""Structured output from alert classification task."""
@@ -49,4 +44,3 @@ class ClassifiedAlertsOutput(BaseModel):
 		description="List of existing episodes (watches) that need to be updated"
 	)
 	total_classified: int = Field(description="Total number of classified alerts")
-

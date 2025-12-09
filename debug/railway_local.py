@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Local debug script that mimics Railway's exact startup process.
-Starts both Celery worker (with beat) and FastAPI server.
-This allows debugging both services simultaneously, matching Railway's behavior.
+Starts both Celery worker (with beat) and FastAPI server in the same process.
+This allows debugging both services simultaneously without subprocess switching.
 
 Usage:
 	python debug/railway_local.py
@@ -23,46 +23,49 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
 	sys.path.insert(0, project_root)
 
-import subprocess
 import signal
-import time
+import threading
 import logging
-from app.logging_config import setup_logging, get_logger
+import asyncio
 
-# Setup logging
-setup_logging(level="INFO")
-logger = get_logger(__name__)
+# Setup simple logging for debug mode (not JSON, easier to read in IDE)
+# Check if we're in debug mode (when running from IDE)
+is_debug_mode = os.getenv("PYTHONDEBUG", "").lower() in ("1", "true") or "--debug" in sys.argv
 
-# Global process references
-celery_process = None
-hypercorn_process = None
+if is_debug_mode:
+	# Use simple format for IDE debug console
+	# Configure root logger to output to stdout with simple format
+	root_logger = logging.getLogger()
+	root_logger.setLevel(logging.INFO)
+	
+	# Remove any existing handlers
+	root_logger.handlers.clear()
+	
+	# Create stdout handler with simple format
+	stdout_handler = logging.StreamHandler(sys.stdout)
+	stdout_handler.setLevel(logging.INFO)
+	formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+	stdout_handler.setFormatter(formatter)
+	root_logger.addHandler(stdout_handler)
+	
+	# Configure app loggers - they'll propagate to root logger
+	# Set level for all app.* loggers to ensure they log
+	app_logger = logging.getLogger("app")
+	app_logger.setLevel(logging.INFO)
+	app_logger.propagate = True  # Ensure propagation to root logger
+	
+	logger = logging.getLogger(__name__)
+else:
+	# Use JSON format for Railway/production
+	from app.logging_config import setup_logging, get_logger
+	setup_logging(level="INFO")
+	logger = get_logger(__name__)
 
 
 def cleanup(signum=None, frame=None):
-	"""Cleanup function to stop all processes."""
-	global celery_process, hypercorn_process
-	
+	"""Cleanup function to stop all services."""
 	logger.info("=" * 80)
 	logger.info("Shutting down services...")
-	
-	if hypercorn_process and hypercorn_process.poll() is None:
-		logger.info("Stopping FastAPI server...")
-		hypercorn_process.terminate()
-		try:
-			hypercorn_process.wait(timeout=5)
-		except subprocess.TimeoutExpired:
-			logger.warning("Hypercorn didn't stop gracefully, killing...")
-			hypercorn_process.kill()
-	
-	if celery_process and celery_process.poll() is None:
-		logger.info("Stopping Celery worker...")
-		celery_process.terminate()
-		try:
-			celery_process.wait(timeout=5)
-		except subprocess.TimeoutExpired:
-			logger.warning("Celery didn't stop gracefully, killing...")
-			celery_process.kill()
-	
 	logger.info("All services stopped.")
 	logger.info("=" * 80)
 	sys.exit(0)
@@ -73,88 +76,99 @@ signal.signal(signal.SIGINT, cleanup)
 signal.signal(signal.SIGTERM, cleanup)
 
 
+def run_celery_worker():
+	"""Run Celery worker with beat in the current process."""
+	# Reconfigure logging for debug mode after celery_app import
+	# (celery_app.py calls setup_logging() which we need to override)
+	if is_debug_mode:
+		root_logger = logging.getLogger()
+		root_logger.handlers.clear()
+		stdout_handler = logging.StreamHandler(sys.stdout)
+		stdout_handler.setLevel(logging.INFO)
+		formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+		stdout_handler.setFormatter(formatter)
+		root_logger.addHandler(stdout_handler)
+		root_logger.setLevel(logging.INFO)
+		
+		# Configure all Celery loggers to propagate to root (which has stdout handler)
+		for logger_name in ["celery", "celery.beat", "celery.worker", "celery.task"]:
+			celery_logger = logging.getLogger(logger_name)
+			celery_logger.handlers.clear()  # Remove any existing handlers
+			celery_logger.setLevel(logging.INFO)
+			celery_logger.propagate = True  # Let logs propagate to root logger
+		
+		# Ensure app loggers are also configured to propagate
+		app_logger = logging.getLogger("app")
+		app_logger.setLevel(logging.INFO)
+		app_logger.propagate = True
+	
+	from app.celery_app import celery_app
+	
+	# Use solo pool to avoid subprocess spawning - all code runs in main process
+	# Pass argv directly to worker_main (starts with 'worker' subcommand)
+	logger.info("Starting Celery worker with beat scheduler (pool=solo)...")
+	try:
+		# Start worker - this blocks until shutdown
+		# argv should start with 'worker' subcommand, not 'celery'
+		celery_app.worker_main(argv=[
+			"worker",
+			"--beat",
+			"--pool=solo",
+			"--loglevel=info"
+		])
+	except SystemExit:
+		# Celery worker_main calls sys.exit() on shutdown, which is expected
+		pass
+	except KeyboardInterrupt:
+		# Handle interrupt gracefully
+		logger.info("Celery worker interrupted")
+
+
+def run_hypercorn():
+	"""Run Hypercorn server in the current process."""
+	import hypercorn.asyncio
+	from hypercorn.config import Config
+	from main import app
+	
+	port = os.getenv("PORT", "8000")
+	logger.info(f"Starting Hypercorn on port {port}...")
+	
+	# Create Hypercorn config
+	config = Config()
+	config.bind = [f"[::]:{port}"]
+	config.use_reload = True  # Enable reload for local development
+	
+	# Run Hypercorn - this blocks until shutdown
+	# Signal handlers will handle cleanup when Ctrl+C is pressed
+	asyncio.run(hypercorn.asyncio.serve(app, config))
+
+
 if __name__ == "__main__":
 	logger.info("=" * 80)
 	logger.info("Starting QuantAgentic API services (Railway Local Debug Mode)")
+	logger.info("All services run in the main process - breakpoints work everywhere!")
 	logger.info("=" * 80)
 	
 	try:
-		# Start Celery worker with beat in the background
-		logger.info("Starting Celery worker with beat scheduler...")
-		celery_cmd = [
-			sys.executable, "-m", "celery",
-			"-A", "app.celery_app",
-			"worker",
-			"--beat",
-			"--loglevel=info",
-			"--logfile=/dev/stdout"  # Use stdout for Railway compatibility
-		]
+		# Start Celery worker with beat in a background thread
+		# Using solo pool ensures all tasks run in the main process
+		celery_thread = threading.Thread(target=run_celery_worker, daemon=True)
+		celery_thread.start()
 		
-		celery_process = subprocess.Popen(
-			celery_cmd,
-			stdout=subprocess.PIPE,
-			stderr=subprocess.STDOUT,
-			text=True,
-			bufsize=1
-		)
-		
-		# Wait a moment for Celery to start
+		# Wait a moment for Celery to initialize
 		logger.info("Waiting for Celery to initialize...")
+		import time
 		time.sleep(3)
 		
-		# Check if Celery started successfully
-		if celery_process.poll() is not None:
-			logger.error("ERROR: Celery worker failed to start!")
-			logger.error(f"Exit code: {celery_process.returncode}")
-			sys.exit(1)
-		
-		logger.info(f"Celery worker started (PID: {celery_process.pid})")
-		logger.info("Starting FastAPI server...")
-		logger.info("=" * 80)
-		
-		# Start FastAPI server in the foreground (this keeps the process alive)
-		# This matches Railway's behavior - hypercorn runs in foreground
-		port = os.getenv("PORT", "8000")
-		hypercorn_cmd = [
-			sys.executable, "-m", "hypercorn",
-			"main:app",
-			"--bind", f"[::]:{port}",
-			"--reload"  # Enable reload for local development
-		]
-		
-		logger.info(f"Starting Hypercorn on port {port}...")
+		logger.info("Celery worker started")
 		logger.info("=" * 80)
 		logger.info("Both services are running. Press Ctrl+C to stop.")
 		logger.info("=" * 80)
 		
-		# Stream Celery output to stdout in a separate thread
-		def stream_celery_output():
-			"""Stream Celery output to stdout."""
-			try:
-				for line in iter(celery_process.stdout.readline, ''):
-					if line:
-						# Use print to ensure it goes to stdout (for Railway compatibility)
-						print(f"[CELERY] {line.rstrip()}", flush=True)
-			except Exception as e:
-				logger.error(f"Error streaming Celery output: {e}")
-		
-		import threading
-		celery_thread = threading.Thread(target=stream_celery_output, daemon=True)
-		celery_thread.start()
-		
-		# Start hypercorn in foreground (this blocks)
-		# The debugger attaches to this main process, and breakpoints in your code
-		# (app/ directory) will work for both Celery tasks and FastAPI endpoints
-		logger.info("Starting Hypercorn (debugger attached to main process)...")
-		logger.info("Note: Breakpoints in app/ code will work for both Celery and FastAPI")
-		hypercorn_process = subprocess.Popen(
-			hypercorn_cmd,
-			stdout=sys.stdout,
-			stderr=sys.stderr
-		)
-		
-		# Wait for hypercorn to finish (or be interrupted)
-		hypercorn_process.wait()
+		# Start Hypercorn in the main thread (this blocks)
+		# The debugger attaches to this main process, and breakpoints work
+		# for both Celery tasks (via solo pool) and FastAPI endpoints
+		run_hypercorn()
 		
 	except KeyboardInterrupt:
 		logger.info("Received interrupt signal...")

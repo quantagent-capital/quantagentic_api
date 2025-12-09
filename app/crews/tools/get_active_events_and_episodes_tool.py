@@ -64,13 +64,16 @@ class GetActiveEpisodesAndEventsTool(BaseTool):
 				events_data = [
 					{
 						"event_key": ev.event_key,
-						"episode_id": ev.episode_id,
+						"episode_key": ev.episode_key,
 						"event_type": ev.event_type,
 						"is_active": ev.is_active,
-						"location": {
-							"ugc_code": ev.location.ugc_code,
-							"shape": ev.location.shape
-						}
+						"locations": [
+							{
+								"ugc_code": loc.ugc_code,
+								"shape": [{"latitude": c.latitude, "longitude": c.longitude} for c in loc.shape]
+							}
+							for loc in ev.locations
+						]
 					}
 					for ev in active_events
 				]

@@ -6,7 +6,7 @@
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/debug/railway_local.py",
-            "console": "integratedTerminal",
+            "console": "internalConsole",
             "justMyCode": false,
             "python": "${workspaceFolder}/venv/bin/python",
             "env": {
@@ -17,8 +17,11 @@
                 "LANGCHAIN_ENDPOINT": "",
                 "LANGCHAIN_API_KEY": "",
                 "LANGCHAIN_PROJECT": "",
-                "LOG_LEVEL": "INFO"
-            }
+                "LOG_LEVEL": "INFO",
+                "PYTHONDEBUG": "1"
+            },
+            // Note: Both Celery (with --pool=solo) and Hypercorn run in the main process.
+            // All breakpoints work without switching between subprocess IDs.
         },
         {
             "name": "Debug: Disaster Polling Task (Direct)",

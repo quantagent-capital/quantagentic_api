@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException, status
-from typing import Optional
+from fastapi import APIRouter, status
 from app.schemas.event import Event
+from app.shared_models.nws_poller_models import FilteredNWSAlert
 from app.services.event_service import EventService
 from app.exceptions import handle_service_exceptions, NotFoundError
 
@@ -8,11 +8,11 @@ router = APIRouter(prefix="/events", tags=["events"])
 
 @router.post("/", response_model=Event, status_code=status.HTTP_201_CREATED)
 @handle_service_exceptions
-async def create_event(event: Event):
+async def create_event(alert: FilteredNWSAlert):
 	"""
-	Create a new event.
+	Create a new event from a FilteredNWSAlert.
 	"""
-	created_event = EventService.create_event(event)
+	created_event = EventService.create_event_from_alert(alert)
 	return created_event
 
 @router.put("/{event_key}", response_model=Event)
