@@ -160,3 +160,5 @@ cython_debug/
 #.idea/
 
 celerybeat-schedule.db
+
+.cursor
