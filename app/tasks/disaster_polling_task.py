@@ -1,7 +1,7 @@
 """
 Celery task for disaster polling agent.
 """
-from typing import List
+from typing import Any, List, Tuple
 from datetime import datetime, timezone
 from app.celery_app import celery_app
 from app.schemas.location import Location
@@ -33,26 +33,19 @@ def disaster_polling_task(self):
 		filtered_alerts = polling_tool.poll()
 		logger.info(f"Retrieved {len(filtered_alerts)} filtered alerts")
 
-		# Filter out duplicate alerts (alerts that already exist in state)
-		non_existing_events = _filter_existing_events(filtered_alerts)
-		non_existing_episodes = []
-		logger.info(f"Found {len(non_existing_events)} non-existing EVENTS")
+		# We are looking for observed events, thus, these typically come in as "updates" from the NWS API.
+		# Thus, if we don't have the event, then it is new to us.
+		internal_non_existing_event_alerts, internal_existing_event_alerts = _separate_existing_event_alerts(filtered_alerts)
+		logger.info(f"Found {len(internal_non_existing_event_alerts)} NON-EXISTING events")
+		logger.info(f"Found {len(internal_existing_event_alerts)} EXISTING events")
 
-		# Classify alerts into new/updated events/episodes
-		classified_output = _classify_message_type(non_existing_events, non_existing_episodes)
-		logger.info(f"Classified alerts: {classified_output.total_classified} total")
-		logger.info(f"  - New events: {len(classified_output.new_events)}")
-		logger.info(f"  - Updated events: {len(classified_output.updated_events)}")
-		logger.info(f"  - New episodes: {len(classified_output.new_episodes)}")
-		logger.info(f"  - Updated episodes: {len(classified_output.updated_episodes)}")
-
-		# Process new events - check for duplicates and make non-blocking calls
-		_process_new_events(classified_output.new_events)
-
-		logger.info("=" * 80)
-		logger.info("DISASTER POLLING TASK STARTED")
-		logger.info("=" * 80)
-		
+		# For existing events, check if they need updates or are duplicates
+		internally_updateable_event_alerts = _identify_updateable_events(internal_existing_event_alerts)
+		logger.info(f"Found {len(internally_updateable_event_alerts)} internally updateable events")
+		logger.info(f"Discarded {len(internal_existing_event_alerts) - len(internally_updateable_event_alerts)} duplicate events")
+	
+		_process_new_events(internal_non_existing_event_alerts)
+		_process_updateable_events(internally_updateable_event_alerts)
 	except Exception as e:
 		logger.error("=" * 80)
 		logger.error(f"Disaster polling task FAILED: {str(e)}")
@@ -65,72 +58,65 @@ def disaster_polling_task(self):
 		raise self.retry(exc=e, countdown=60 * (2 ** self.request.retries))
 
 @staticmethod
-def _filter_existing_events(alerts: List[FilteredNWSAlert]) -> List[FilteredNWSAlert]:
+def _separate_existing_event_alerts(alerts: List[FilteredNWSAlert]) -> Tuple[List[FilteredNWSAlert], List[FilteredNWSAlert]]:
 	"""
-	Filter out alerts that already exist in state.
+	Filter alerts into non-existing and existing event alerts.
+	Args:
+		alerts: List of FilteredNWSAlert objects to filter
+	Returns:
+		Tuple of lists: (non-existing event alerts, existing event alerts)
 	"""
-	# Use the state.event_exists for each alert.key
-	non_existing_events = []
+	non_existing_events_alerts = []
+	existing_events_alerts = []
 	for alert in alerts:
 		if not state.event_exists(alert.key):
-			non_existing_events.append(alert)
+			non_existing_events_alerts.append(alert)
+		else:
+			existing_events_alerts.append(alert)
 		
-	return non_existing_events
+	return (non_existing_events_alerts, existing_events_alerts)
 
 @staticmethod
-def _filter_existing_episodes(alerts: List[FilteredNWSAlert]) -> List[FilteredNWSAlert]:
+def _identify_updateable_events(existing_event_alerts: List[FilteredNWSAlert]) -> List[FilteredNWSAlert]:
 	"""
-	Filter out alerts that already exist in state.
-	"""
-	existing_episode_keys = {episode.episode_key for episode in state.active_episodes}
-	return [alert for alert in alerts if alert.key not in existing_episode_keys and alert.is_watch]
-
-@staticmethod
-def _classify_message_type(non_existing_events: List[FilteredNWSAlert], non_existing_episodes: List[FilteredNWSAlert]) -> ClassifiedAlertsOutput:
-	"""
-	Classify alerts into new/updated events/episodes based on message type and watch/warning status.
-	Duplicate alerts are skipped in this method.
+	Identify which existing events need to be updated vs which are duplicates.
 	
-	Classification rules:
-	- UPDATE message types: ['CON', 'EXT', 'EXA', 'EXB']
-	- CREATE message types: ['NEW', 'UPG']
-	- WATCHES = EPISODES
-	- WARNINGS = EVENTS
+	For each alert that matches an existing event key:
+	- Get the matching event from state
+	- Check if alert.alert_id matches matching_event.nws_alert_id (duplicate)
+	- Check if alert.alert_id is in matching_event.previous_ids (duplicate)
+	- If neither match, the alert needs to be updated (add to updateable list)
+	- If either matches, it's a duplicate (discard)
 	
 	Args:
-		alerts: List of FilteredNWSAlert objects to classify
+		existing_event_alerts: List of FilteredNWSAlert objects that match existing event keys
 		
 	Returns:
-		ClassifiedAlertsOutput with alerts categorized into four groups
+		List of FilteredNWSAlert objects that need to be updated (not duplicates)
 	"""
-	UPDATE_MESSAGE_TYPES = ['CON', 'EXT', 'EXA', 'EXB']
-	CREATE_MESSAGE_TYPES = ['NEW', 'UPG']
+	internally_updateable_events = []
 	
-	new_events = []
-	updated_events = []
-	new_episodes = []
-	updated_episodes = []
+	for alert in existing_event_alerts:
+		matching_event = state.get_event(alert.key)
+		if matching_event is None:
+			# This shouldn't happen if event_exists returned True, but handle gracefully
+			logger.warning(f"Event with key {alert.key} was marked as existing but couldn't be retrieved from state")
+			continue
+		
+		# Check if this alert_id is a duplicate
+		is_duplicate = (
+			matching_event.nws_alert_id == alert.alert_id or
+			alert.alert_id in matching_event.previous_ids
+		)
+		
+		if is_duplicate:
+			# Same alert ID or in previous_ids means this is a duplicate, discard it
+			logger.debug(f"Discarding duplicate alert {alert.alert_id} for event key {alert.key}")
+		else:
+			# Different alert ID and not in previous_ids means this is an update
+			internally_updateable_events.append(alert)
 	
-	for alert in non_existing_events:
-		if alert.message_type in CREATE_MESSAGE_TYPES:
-			new_events.append(alert)
-		elif alert.message_type in UPDATE_MESSAGE_TYPES:
-			updated_events.append(alert)
-	for alert in non_existing_episodes:
-		if alert.message_type in CREATE_MESSAGE_TYPES:
-			new_episodes.append(alert)
-		elif alert.message_type in UPDATE_MESSAGE_TYPES:
-			updated_episodes.append(alert)
-	
-	total_classified = len(new_events) + len(updated_events) + len(new_episodes) + len(updated_episodes)
-	
-	return ClassifiedAlertsOutput(
-		new_events=new_events,
-		updated_events=updated_events,
-		new_episodes=new_episodes,
-		updated_episodes=updated_episodes,
-		total_classified=total_classified
-	)
+	return internally_updateable_events
 
 @staticmethod
 def _process_new_events(new_events: List[FilteredNWSAlert]):
@@ -162,3 +148,27 @@ def _process_new_events(new_events: List[FilteredNWSAlert]):
 	
 	logger.info(f"Finished processing {len(new_events)} new events")
 
+@staticmethod
+def _process_updateable_events(updateable_events: List[FilteredNWSAlert]):
+	"""
+	Process updateable events: iterate through and update events one by one.
+	
+	Args:
+		updateable_events: List of FilteredNWSAlert objects for updateable events
+	"""
+	if not updateable_events:
+		logger.info("No updateable events to process")
+		return
+
+	logger.info(f"Processing {len(updateable_events)} updateable events")
+
+	# Iterate through events one by one, updating each event
+	for alert in updateable_events:
+		try:
+			updated_event = EventService.update_event_from_alert(alert)
+			logger.debug(f"Updated event: `{updated_event.event_key}` via service layer")
+		except Exception as e:
+			# Log error but continue processing remaining events
+			logger.error(f"Error updating event from alert: {alert.alert_id} via service layer: {str(e)}")
+			import traceback
+			logger.error(traceback.format_exc())

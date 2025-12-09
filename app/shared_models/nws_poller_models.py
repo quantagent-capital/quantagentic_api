@@ -23,7 +23,7 @@ class FilteredNWSAlert(BaseModel):
 	affected_zones_raw_ugc_codes: List[str] = Field(description="List of raw UGC codes for the affected zones")
 	referenced_alerts: List[dict] = Field(description="List of referenced alert IDs")
 	expires: Optional[str] = Field(default=None, description="Expiration datetime")
-	expected_end: Optional[str] = Field(default=None, description="Expected end datetime")
+	expected_end: Optional[str] = Field(default=None, description="Expected end datetime") 
 	headline: Optional[str] = Field(default=None, description="Alert headline")
 	description: Optional[str] = Field(default=None, description="Alert description")
 	raw_vtec: str = Field(description="Raw VTEC string from the alert")
@@ -37,10 +37,5 @@ class ClassifiedAlertsOutput(BaseModel):
 	updated_events: List[FilteredNWSAlert] = Field(
 		description="List of existing events (warnings) that need to be updated"
 	)
-	new_episodes: List[FilteredNWSAlert] = Field(
-		description="List of new episodes (watches) that need to be created"
-	)
-	updated_episodes: List[FilteredNWSAlert] = Field(
-		description="List of existing episodes (watches) that need to be updated"
-	)
 	total_classified: int = Field(description="Total number of classified alerts")
+	

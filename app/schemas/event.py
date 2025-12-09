@@ -20,3 +20,4 @@ class Event(BaseSchema):
     description: str
     is_active: bool = True
     raw_vtec: str
+    previous_ids: List[str] = []
