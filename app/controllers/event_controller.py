@@ -1,10 +1,20 @@
 from fastapi import APIRouter, status
+from typing import List
 from app.schemas.event import Event
 from app.shared_models.nws_poller_models import FilteredNWSAlert
 from app.services.event_service import EventService
 from app.exceptions import handle_service_exceptions, NotFoundError
 
 router = APIRouter(prefix="/events", tags=["events"])
+
+@router.get("/", response_model=List[Event])
+@handle_service_exceptions
+async def get_all_events():
+	"""
+	Get all events from state.
+	"""
+	events = EventService.get_all_events()
+	return events
 
 @router.post("/", response_model=Event, status_code=status.HTTP_201_CREATED)
 @handle_service_exceptions

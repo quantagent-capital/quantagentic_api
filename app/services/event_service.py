@@ -110,6 +110,16 @@ class EventService:
 		return event.episode_key is not None
 	
 	@staticmethod
+	def get_all_events() -> List[Event]:
+		"""
+		Get all events from state.
+		
+		Returns:
+			List of all Event objects in state
+		"""
+		return state.events
+	
+	@staticmethod
 	def _merge_locations(existing_locations: List[Location], new_locations: List[Location]) -> List[Location]:
 		"""
 		Merge existing and new locations, avoiding duplicates based on ugc_code.
