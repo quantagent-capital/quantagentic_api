@@ -1,10 +1,10 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.controllers import episode_controller, event_controller
 from app.logging_config import setup_logging
 import os
 
 # Setup structured JSON logging to stdout (for Railway)
-# This ensures logs are properly categorized instead of all showing as errors
 log_level = os.getenv("LOG_LEVEL", "INFO")
 setup_logging(level=log_level)
 
@@ -13,6 +13,17 @@ app = FastAPI(
 	description="API for managing disaster episodes and events with AI agents",
 	version="1.0.0"
 )
+
+# --- CORS CONFIGURATION START ---
+# This allows Google AI Studio (and everyone else) to access your API
+app.add_middleware(
+	CORSMiddleware,
+	allow_origins=["*"],  # Allows all origins
+	allow_credentials=True,
+	allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
+	allow_headers=["*"],  # Allows all headers (Authorization, etc.)
+)
+# --- CORS CONFIGURATION END ---
 
 # Include routers
 app.include_router(episode_controller.router)
