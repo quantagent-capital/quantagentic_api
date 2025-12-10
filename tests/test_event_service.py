@@ -2,7 +2,7 @@
 Comprehensive unit tests for EventService methods.
 """
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from datetime import datetime, timezone
 from app.services.event_service import EventService
 from app.shared_models.nws_poller_models import FilteredNWSAlert
@@ -10,7 +10,7 @@ from app.schemas.event import Event
 from app.schemas.location import Location, Coordinate
 from app.exceptions import NotFoundError
 from app.exceptions.base import ConflictError
-from app.crews.utils.nws_event_types import NWS_WARNING_CODES
+from app.utils.nws_event_types import NWS_WARNING_CODES
 
 
 class TestCreateEventFromAlert:

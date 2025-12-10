@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from app.celery_app import celery_app
 from app.schemas.location import Location
 from app.shared_models.nws_poller_models import ClassifiedAlertsOutput, FilteredNWSAlert
-from app.crews.tools.nws_polling_tool import NWSPollingTool
+from app.pollers.nws_polling_tool import NWSConfirmedEventsPoller
 from app.state import state
 from app.services.event_service import EventService
 import logging
@@ -29,23 +29,23 @@ def disaster_polling_task(self):
 	
 	try:
 		logger.info("Polling NWS API for active alerts...")
-		polling_tool = NWSPollingTool()
+		polling_tool = NWSConfirmedEventsPoller()
 		filtered_alerts = polling_tool.poll()
 		logger.info(f"Retrieved {len(filtered_alerts)} filtered alerts")
 
 		# We are looking for observed events, thus, these typically come in as "updates" from the NWS API.
 		# Thus, if we don't have the event, then it is new to us.
-		internal_non_existing_event_alerts, internal_existing_event_alerts = _separate_existing_event_alerts(filtered_alerts)
-		logger.info(f"Found {len(internal_non_existing_event_alerts)} NON-EXISTING events")
-		logger.info(f"Found {len(internal_existing_event_alerts)} EXISTING events")
+		alerts_for_non_existing_events, alerts_for_existing_events = _separate_alerts_for_existing_events(filtered_alerts)
+		logger.info(f"Found {len(alerts_for_non_existing_events)} alerts for NON-EXISTING events")
+		logger.info(f"Found {len(alerts_for_existing_events)} alerts for EXISTING events")
 
-		# For existing events, check if they need updates or are duplicates
-		internally_updateable_event_alerts = _identify_updateable_events(internal_existing_event_alerts)
-		logger.info(f"Found {len(internally_updateable_event_alerts)} internally updateable events")
-		logger.info(f"Discarded {len(internal_existing_event_alerts) - len(internally_updateable_event_alerts)} duplicate events")
+		# For alerts that link to existing events, check if they need updates or are duplicates
+		alerts_for_updateable_events = _filter_out_preprocessed_alerts(alerts_for_existing_events)
+		logger.info(f"Found {len(alerts_for_updateable_events)} alerts which link to updateable events")
+		logger.info(f"Discarded {len(alerts_for_existing_events) - len(alerts_for_updateable_events)} preprocessed alerts")
 	
-		_process_new_events(internal_non_existing_event_alerts)
-		_process_updateable_events(internally_updateable_event_alerts)
+		_process_new_events(alerts_for_non_existing_events)
+		_process_updateable_events(alerts_for_updateable_events)
 	except Exception as e:
 		logger.error("=" * 80)
 		logger.error(f"Disaster polling task FAILED: {str(e)}")
@@ -58,7 +58,7 @@ def disaster_polling_task(self):
 		raise self.retry(exc=e, countdown=60 * (2 ** self.request.retries))
 
 @staticmethod
-def _separate_existing_event_alerts(alerts: List[FilteredNWSAlert]) -> Tuple[List[FilteredNWSAlert], List[FilteredNWSAlert]]:
+def _separate_alerts_for_existing_events(alerts: List[FilteredNWSAlert]) -> Tuple[List[FilteredNWSAlert], List[FilteredNWSAlert]]:
 	"""
 	Filter alerts into non-existing and existing event alerts.
 	Args:
@@ -66,18 +66,18 @@ def _separate_existing_event_alerts(alerts: List[FilteredNWSAlert]) -> Tuple[Lis
 	Returns:
 		Tuple of lists: (non-existing event alerts, existing event alerts)
 	"""
-	non_existing_events_alerts = []
-	existing_events_alerts = []
+	non_existing_alerts_for_events = []
+	existing_alerts_for_events = []
 	for alert in alerts:
 		if not state.event_exists(alert.key):
-			non_existing_events_alerts.append(alert)
+			non_existing_alerts_for_events.append(alert)
 		else:
-			existing_events_alerts.append(alert)
+			existing_alerts_for_events.append(alert)
 		
-	return (non_existing_events_alerts, existing_events_alerts)
+	return (non_existing_alerts_for_events, existing_alerts_for_events)
 
 @staticmethod
-def _identify_updateable_events(existing_event_alerts: List[FilteredNWSAlert]) -> List[FilteredNWSAlert]:
+def _filter_out_preprocessed_alerts(alerts_for_existing_events: List[FilteredNWSAlert]) -> List[FilteredNWSAlert]:
 	"""
 	Identify which existing events need to be updated vs which are duplicates.
 	
@@ -89,14 +89,14 @@ def _identify_updateable_events(existing_event_alerts: List[FilteredNWSAlert]) -
 	- If either matches, it's a duplicate (discard)
 	
 	Args:
-		existing_event_alerts: List of FilteredNWSAlert objects that match existing event keys
+		alerts_for_existing_events: List of FilteredNWSAlert objects that match existing event keys
 		
 	Returns:
-		List of FilteredNWSAlert objects that need to be updated (not duplicates)
+		List of FilteredNWSAlert objects that are useable for updating existing events (not duplicates)
 	"""
-	internally_updateable_events = []
+	useable_alerts = []
 	
-	for alert in existing_event_alerts:
+	for alert in alerts_for_existing_events:
 		matching_event = state.get_event(alert.key)
 		if matching_event is None:
 			# This shouldn't happen if event_exists returned True, but handle gracefully
@@ -114,9 +114,9 @@ def _identify_updateable_events(existing_event_alerts: List[FilteredNWSAlert]) -
 			logger.debug(f"Discarding duplicate alert {alert.alert_id} for event key {alert.key}")
 		else:
 			# Different alert ID and not in previous_ids means this is an update
-			internally_updateable_events.append(alert)
+			useable_alerts.append(alert)
 	
-	return internally_updateable_events
+	return useable_alerts
 
 @staticmethod
 def _process_new_events(new_events: List[FilteredNWSAlert]):

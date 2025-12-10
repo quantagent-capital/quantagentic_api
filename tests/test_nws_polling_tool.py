@@ -3,11 +3,10 @@ Unit tests for NWSPollingTool.
 Tests the actual poll() and _async_poll() methods.
 """
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from app.crews.tools.nws_polling_tool import NWSPollingTool
-from app.crews.utils.nws_event_types import ALL_NWS_EVENT_CODES
+from unittest.mock import AsyncMock, patch
+from app.pollers.nws_polling_tool import NWSConfirmedEventsPoller
 from app.shared_models.nws_poller_models import FilteredNWSAlert
-from app.schemas.location import Location, Coordinate
+from app.schemas.location import Location
 
 
 class TestNWSPollingTool:
@@ -16,7 +15,7 @@ class TestNWSPollingTool:
 	@pytest.fixture
 	def tool(self):
 		"""Create tool instance."""
-		return NWSPollingTool()
+		return NWSConfirmedEventsPoller()
 	
 	@pytest.fixture
 	def sample_nws_response(self):

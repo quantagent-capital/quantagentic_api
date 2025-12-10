@@ -17,20 +17,20 @@ Service classes can raise custom exceptions that will be automatically converted
 ```python
 from app.exceptions import NotFoundError, ValidationError, ServiceError
 
-class EpisodeService:
+class EventService:
     @staticmethod
-    def get_episode(episode_id: int) -> Optional[Episode]:
-        episode_dict = quantagent_redis.read(f"episode:{episode_id}")
-        if episode_dict is None:
-            raise NotFoundError("Episode", str(episode_id))
-        return Episode.from_dict(episode_dict)
+    def get_event(event_key: str) -> Optional[Event]:
+        event = state.get_event(event_key)
+        if event is None:
+            raise NotFoundError("Event", event_key)
+        return event
     
     @staticmethod
-    def create_episode(episode: Episode) -> Episode:
-        if episode.episode_id < 0:
-            raise ValidationError("Episode ID must be positive")
+    def create_event(event: Event) -> Event:
+        if not event.event_key:
+            raise ValidationError("Event key is required")
         # ... create logic
-        return episode
+        return event
 ```
 
 ## Usage in Controllers
@@ -40,13 +40,13 @@ Controllers use the `@handle_service_exceptions` decorator to automatically conv
 ```python
 from app.exceptions import handle_service_exceptions, NotFoundError
 
-@router.get("/{episode_id}")
+@router.get("/{event_key}")
 @handle_service_exceptions
-async def get_episode(episode_id: int):
-    episode = EpisodeService.get_episode(episode_id)
-    if episode is None:
-        raise NotFoundError("Episode", str(episode_id))
-    return episode
+async def get_event(event_key: str):
+    event = EventService.get_event(event_key)
+    if event is None:
+        raise NotFoundError("Event", event_key)
+    return event
 ```
 
 ## Benefits

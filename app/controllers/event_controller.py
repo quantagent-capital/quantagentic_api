@@ -1,11 +1,13 @@
 from fastapi import APIRouter, status
 from typing import List
+from app.exceptions.base import ConflictError
 from app.schemas.event import Event
 from app.shared_models.nws_poller_models import FilteredNWSAlert
 from app.services.event_service import EventService
 from app.exceptions import handle_service_exceptions, NotFoundError
-
+import logging
 router = APIRouter(prefix="/events", tags=["events"])
+logger = logging.getLogger(__name__)
 
 @router.get("/", response_model=List[Event])
 @handle_service_exceptions
@@ -27,11 +29,16 @@ async def create_event(alert: FilteredNWSAlert):
 
 @router.put("/{event_key}", response_model=Event)
 @handle_service_exceptions
-async def update_event(event_key: str, event: Event):
+async def update_event(event_key: str, alert: FilteredNWSAlert):
 	"""
 	Update an existing event.
 	"""
-	updated_event = EventService.update_event(event_key, event)
+	if alert.message_type.upper() == "NEW":
+		message = f"Cannot update an existing event with a NEW message type: {alert.message_type}"
+		logger.warning(message)
+		raise ConflictError(message)
+
+	updated_event = EventService.update_event_from_alert(alert)
 	if updated_event is None:
 		raise NotFoundError("Event", event_key)
 	return updated_event

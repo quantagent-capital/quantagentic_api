@@ -12,5 +12,5 @@ class Location(BaseSchema):
 	state_fips: str
 	county_fips: str
 	ugc_code: str
-	shape: List[Coordinate]  # Changed from str to List[Coordinate]
+	shape: List[Coordinate]
 	full_zone_ugc_endpoint: str

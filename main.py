@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.controllers import episode_controller, event_controller
+from app.controllers import event_controller
 from app.logging_config import setup_logging
 import os
 
@@ -10,7 +10,7 @@ setup_logging(level=log_level)
 
 app = FastAPI(
 	title="QuantAgentic API",
-	description="API for managing disaster episodes and events with AI agents",
+	description="API for managing disaster events",
 	version="1.0.0"
 )
 
@@ -26,7 +26,6 @@ app.add_middleware(
 # --- CORS CONFIGURATION END ---
 
 # Include routers
-app.include_router(episode_controller.router)
 app.include_router(event_controller.router)
 
 @app.get("/")
@@ -35,7 +34,6 @@ async def root():
 		"greeting": "Hello, World!",
 		"message": "Welcome to QuantAgentic API!",
 		"endpoints": {
-			"episodes": "/episodes",
 			"events": "/events"
 		}
 	}

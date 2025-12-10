@@ -124,26 +124,6 @@ class State:
 		if event_dict is None:
 			return None
 		return Event.from_dict(event_dict)
-	
-	@property
-	def active_episodes(self) -> List[Episode]:
-		"""
-		Getter for active_episodes.
-		Usage: episodes = state.active_episodes
-		"""
-		pass
-		# TODO return self._active_episodes
-	
-
-	def add_active_episode(self, episode: Episode):
-		"""Add an active episode."""
-		pass
-		# TODO add episode to Redis
-	
-	def remove_active_episode(self, episode_id: int):
-		"""Remove an active episode by ID."""
-		pass
-		# TODO remove episode from Redis
 
 # Global state instance
 state = State()

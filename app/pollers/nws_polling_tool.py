@@ -6,15 +6,15 @@ from typing import Any, Dict, List
 from urllib.parse import urlparse
 from app.schemas.location import Coordinate, Location
 from app.shared_models.nws_poller_models import FilteredNWSAlert
-from app.crews.utils import vtec
+from app.utils import vtec
 from app.http_client.nws_client import NWSClient
-from app.crews.utils.nws_event_types import ALL_NWS_EVENT_CODES
+from app.utils.nws_event_types import ALL_NWS_EVENT_CODES
 from app.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
 
-class NWSPollingTool:
+class NWSConfirmedEventsPoller:
 	"""
 	Tool to poll the NWS API for active alerts.
 	"""
