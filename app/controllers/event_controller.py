@@ -34,7 +34,7 @@ async def update_event(event_key: str, alert: FilteredNWSAlert):
 	Update an existing event.
 	"""
 	if alert.message_type.upper() == "NEW":
-		message = f"Cannot update an existing event with a NEW message type: {alert.message_type}"
+		message = f"Cannot update an existing event with a message type of {alert.message_type}"
 		logger.warning(message)
 		raise ConflictError(message)
 

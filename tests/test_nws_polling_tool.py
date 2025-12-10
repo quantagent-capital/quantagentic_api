@@ -61,7 +61,7 @@ class TestNWSPollingTool:
 			]
 		}
 	
-	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@patch('app.pollers.nws_polling_tool.NWSClient')
 	@pytest.mark.asyncio
 	async def test_async_poll_success(self, mock_client_class, tool, sample_nws_response):
 		"""Test successful async NWS polling."""
@@ -85,7 +85,7 @@ class TestNWSPollingTool:
 		assert "params" in call_args.kwargs
 		assert call_args.kwargs["params"]["status"] == "actual"
 	
-	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@patch('app.pollers.nws_polling_tool.NWSClient')
 	def test_poll_success(self, mock_client_class, tool, sample_nws_response):
 		"""Test successful synchronous NWS polling."""
 		# Setup mocks
@@ -102,7 +102,7 @@ class TestNWSPollingTool:
 		assert isinstance(result[0], FilteredNWSAlert)
 		mock_client.get.assert_called_once()
 	
-	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@patch('app.pollers.nws_polling_tool.NWSClient')
 	@pytest.mark.asyncio
 	async def test_async_poll_filters_by_event_type(self, mock_client_class, tool):
 		"""Test that alerts are filtered by event type."""
@@ -159,7 +159,7 @@ class TestNWSPollingTool:
 		assert "TOR" in event_types or len(result) == 0  # TOR might be filtered if VTEC parsing fails
 		assert "XXX" not in event_types
 	
-	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@patch('app.pollers.nws_polling_tool.NWSClient')
 	@pytest.mark.asyncio
 	async def test_async_poll_handles_304_not_modified(self, mock_client_class, tool):
 		"""Test handling of 304 Not Modified response."""
@@ -173,7 +173,7 @@ class TestNWSPollingTool:
 		# Should return empty list
 		assert result == []
 	
-	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@patch('app.pollers.nws_polling_tool.NWSClient')
 	@pytest.mark.asyncio
 	async def test_async_poll_includes_vtec_fields(self, mock_client_class, tool, sample_nws_response):
 		"""Test that filtered alerts include VTEC-related fields."""
@@ -196,7 +196,7 @@ class TestNWSPollingTool:
 			assert hasattr(alert, "is_watch")
 			assert hasattr(alert, "locations")
 	
-	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@patch('app.pollers.nws_polling_tool.NWSClient')
 	@pytest.mark.asyncio
 	async def test_async_poll_empty_response(self, mock_client_class, tool):
 		"""Test polling with empty response."""
@@ -208,7 +208,7 @@ class TestNWSPollingTool:
 		
 		assert result == []
 	
-	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@patch('app.pollers.nws_polling_tool.NWSClient')
 	@pytest.mark.asyncio
 	async def test_async_poll_no_features_key(self, mock_client_class, tool):
 		"""Test polling when response doesn't have features key."""
@@ -220,7 +220,7 @@ class TestNWSPollingTool:
 		
 		assert result == []
 	
-	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@patch('app.pollers.nws_polling_tool.NWSClient')
 	def test_poll_handles_runtime_error(self, mock_client_class, tool):
 		"""Test that poll() handles errors and raises RuntimeError."""
 		mock_client = AsyncMock()
@@ -232,7 +232,7 @@ class TestNWSPollingTool:
 		
 		assert "Error polling NWS API" in str(exc_info.value)
 	
-	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@patch('app.pollers.nws_polling_tool.NWSClient')
 	@pytest.mark.asyncio
 	async def test_async_poll_filters_warning_or_watch(self, mock_client_class, tool):
 		"""Test that alerts are filtered by warning/watch status."""
@@ -270,7 +270,7 @@ class TestNWSPollingTool:
 		# The tool filters by warning_or_watch, so only warnings/watches pass
 		assert isinstance(result, list)
 	
-	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@patch('app.pollers.nws_polling_tool.NWSClient')
 	@pytest.mark.asyncio
 	async def test_async_poll_extracts_locations(self, mock_client_class, tool, sample_nws_response):
 		"""Test that locations are properly extracted from alerts."""
@@ -288,7 +288,7 @@ class TestNWSPollingTool:
 			if len(alert.locations) > 0:
 				assert isinstance(alert.locations[0], Location)
 	
-	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@patch('app.pollers.nws_polling_tool.NWSClient')
 	@pytest.mark.asyncio
 	async def test_async_poll_expected_end_from_event_ending_time(self, mock_client_class, tool):
 		"""Test that expected_end uses eventEndingTime when available."""
@@ -328,7 +328,7 @@ class TestNWSPollingTool:
 			# Should use eventEndingTime, not ends or expires
 			assert alert.expected_end == "2024-01-15T11:00:00-00:00"
 	
-	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@patch('app.pollers.nws_polling_tool.NWSClient')
 	@pytest.mark.asyncio
 	async def test_async_poll_expected_end_fallback_to_ends(self, mock_client_class, tool):
 		"""Test that expected_end falls back to ends when eventEndingTime is None."""
@@ -368,7 +368,7 @@ class TestNWSPollingTool:
 			# Should use ends, not expires
 			assert alert.expected_end == "2024-01-15T11:30:00-00:00"
 	
-	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@patch('app.pollers.nws_polling_tool.NWSClient')
 	@pytest.mark.asyncio
 	async def test_async_poll_expected_end_fallback_to_expires(self, mock_client_class, tool):
 		"""Test that expected_end falls back to expires when eventEndingTime and ends are None."""
@@ -408,7 +408,7 @@ class TestNWSPollingTool:
 			# Should use expires as final fallback
 			assert alert.expected_end == "2024-01-15T12:00:00-00:00"
 	
-	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@patch('app.pollers.nws_polling_tool.NWSClient')
 	@pytest.mark.asyncio
 	async def test_async_poll_expected_end_all_none(self, mock_client_class, tool):
 		"""Test that expected_end is None when eventEndingTime, ends, and expires are all None."""
@@ -448,7 +448,7 @@ class TestNWSPollingTool:
 			# Should be None when all fallbacks are None
 			assert alert.expected_end is None
 	
-	@patch('app.crews.tools.nws_polling_tool.NWSClient')
+	@patch('app.pollers.nws_polling_tool.NWSClient')
 	@pytest.mark.asyncio
 	async def test_async_poll_expected_end_empty_event_ending_time_list(self, mock_client_class, tool):
 		"""Test that expected_end falls back when eventEndingTime is an empty list."""
