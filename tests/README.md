@@ -1,6 +1,6 @@
 # Testing Documentation
 
-This directory contains unit tests for the QuantAgentic API, with a focus on testing CrewAI tools and utilities.
+This directory contains unit tests for the QuantAgentic API, covering CrewAI tools, service layer methods, and utilities.
 
 ## Test Structure
 
@@ -9,8 +9,7 @@ tests/
 ├── __init__.py
 ├── conftest.py                    # Pytest fixtures and configuration
 ├── test_nws_polling_tool.py       # Tests for NWS polling tool
-├── test_state_tool.py             # Tests for state access tool
-└── test_forecast_zone_tool.py     # Tests for forecast zone tool
+└── test_event_service.py          # Tests for EventService methods
 ```
 
 ## Running Tests
@@ -37,16 +36,20 @@ pytest -v
 **Run specific test file:**
 ```bash
 pytest tests/test_nws_polling_tool.py
+pytest tests/test_event_service.py
 ```
 
 **Run specific test class:**
 ```bash
 pytest tests/test_nws_polling_tool.py::TestNWSPollingTool
+pytest tests/test_event_service.py::TestCreateEventFromAlert
+pytest tests/test_event_service.py::TestUpdateEventFromAlert
 ```
 
 **Run specific test method:**
 ```bash
-pytest tests/test_nws_polling_tool.py::TestNWSPollingTool::test_poll_nws_alerts_success
+pytest tests/test_nws_polling_tool.py::TestNWSPollingTool::test_async_poll_success
+pytest tests/test_event_service.py::TestCreateEventFromAlert::test_create_event_from_alert_success
 ```
 
 ### Advanced Options
@@ -79,33 +82,46 @@ pytest -s
 
 **Run only tests matching a pattern:**
 ```bash
-pytest -k "polling"
+pytest -k "polling"      # Run all polling-related tests
+pytest -k "event_service"  # Run all event service tests
+pytest -k "create"       # Run all tests with "create" in the name
 ```
 
 ## Test Coverage
 
 ### Current Test Files
 
-1. **test_nws_polling_tool.py** (5 tests)
-   - Tests NWS API polling functionality
-   - Tests If-Modified-Since header handling
-   - Tests alert filtering by severity/urgency/certainty
+1. **test_nws_polling_tool.py** (10 tests)
+   - Tests NWS API polling functionality (`poll()` and `_async_poll()`)
+   - Tests successful polling with proper response handling
+   - Tests alert filtering by event type
    - Tests 304 Not Modified response handling
-   - Tests tool metadata
+   - Tests VTEC field inclusion in filtered alerts
+   - Tests empty response handling
+   - Tests error handling and RuntimeError propagation
+   - Tests warning/watch filtering
+   - Tests location extraction from alerts
 
-2. **test_state_tool.py** (4 tests)
-   - Tests accessing active episodes and events
-   - Tests metadata inclusion/exclusion
-   - Tests empty state handling
-   - Tests tool metadata
+2. **test_event_service.py** (17 tests)
+   - Tests `create_event_from_alert()` method:
+     - Successful event creation from alert
+     - Handling missing optional dates
+     - Conflict error when event already exists
+     - Unknown event type handling
+     - Field preservation and mapping
+   - Tests `update_event_from_alert()` method:
+     - Standard update (CON message type) - merges locations and updates fields
+     - COR (Correction) message type - replaces entire event
+     - UPG (Update) message type - replaces entire event
+     - CAN (Cancel) message type - marks event as inactive
+     - EXP (Expired) message type - marks event as inactive
+     - Location merging without duplicates
+     - Previous ID tracking
+     - Case-insensitive message type handling
+     - Missing expected_end handling
+     - NotFoundError handling
 
-3. **test_forecast_zone_tool.py** (4 tests)
-   - Tests forecast zone retrieval
-   - Tests URL and path-only inputs
-   - Tests error handling
-   - Tests tool metadata
-
-**Total: 13 tests** (all passing ✅)
+**Total: 27 tests** (all passing ✅)
 
 ## Test Fixtures
 

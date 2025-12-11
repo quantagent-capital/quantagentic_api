@@ -1,83 +1,58 @@
-from typing import Optional
-from app.redis_client import quantagent_redis
+from typing import Optional, List, Dict
 from app.schemas.event import Event
+from app.shared_models.nws_poller_models import FilteredNWSAlert
+from app.services.event_crud_service import EventCRUDService
+from app.services.event_create_service import EventCreateService
+from app.services.event_update_service import EventUpdateService
+from app.services.event_completion_service import EventCompletionService
+
 
 class EventService:
-	"""Service layer for Event operations."""
+	"""
+	Service layer for Event operations.
 	
+	This class acts as a facade, delegating to specialized services:
+	- EventCRUDService: CRUD operations
+	- EventCreateService: Event creation
+	- EventUpdateService: Event updates
+	- EventCompletionService: Completion checking
+	"""
+
+	# CRUD Operations - delegate to EventCRUDService
 	@staticmethod
-	def _get_redis_key(event_key: str) -> str:
-		return f"event:{event_key}"
-	
-	@staticmethod
-	def create_event(event: Event) -> Event:
-		"""
-		Create a new event.
-		
-		Args:
-			event: Event object to create
-		
-		Returns:
-			Created event
-		"""
-		# TODO: Implement create logic
-		key = EventService._get_redis_key(event.event_key)
-		event_dict = event.to_dict()
-		quantagent_redis.create(key, event_dict)
-		return event
-	
-	@staticmethod
-	def update_event(event_key: str, event: Event) -> Optional[Event]:
-		"""
-		Update an existing event.
-		
-		Args:
-			event_key: Key of event to update
-			event: Updated event object
-		
-		Returns:
-			Updated event or None if not found
-		"""
-		# TODO: Implement update logic
-		key = EventService._get_redis_key(event_key)
-		if not quantagent_redis.exists(key):
-			return None
-		event_dict = event.to_dict()
-		quantagent_redis.update(key, event_dict)
-		return event
-	
-	@staticmethod
-	def get_event(event_key: str) -> Optional[Event]:
-		"""
-		Get an event by key.
-		
-		Args:
-			event_key: Key of event to retrieve
-		
-		Returns:
-			Event object or None if not found
-		"""
-		# TODO: Implement get logic
-		key = EventService._get_redis_key(event_key)
-		event_dict = quantagent_redis.read(key)
-		if event_dict is None:
-			return None
-		return Event.from_dict(event_dict)
-	
+	def get_event(event_key: str) -> Event:
+		"""Get an event by key."""
+		return EventCRUDService.get_event(event_key)
+
 	@staticmethod
 	def has_episode(event_key: str) -> bool:
-		"""
-		Check if an event has an associated episode.
-		
-		Args:
-			event_key: Key of event to check
-		
-		Returns:
-			True if event has an episode_id, False otherwise
-		"""
-		# TODO: Implement has_episode logic
-		event = EventService.get_event(event_key)
-		if event is None:
-			return False
-		return event.episode_id is not None
+		"""Check if an event has an associated episode."""
+		return EventCRUDService.has_episode(event_key)
 
+	@staticmethod
+	def get_events(hour_offset: Optional[int] = 72) -> List[Event]:
+		"""Get events from state, optionally filtered by hour_offset."""
+		return EventCRUDService.get_events(hour_offset)
+
+	@staticmethod
+	def get_active_event_counts_by_type() -> Dict[str, int]:
+		"""Get count of active events grouped by event type."""
+		return EventCRUDService.get_active_event_counts_by_type()
+
+	# Create Operations - delegate to EventCreateService
+	@staticmethod
+	def create_event_from_alert(alert: FilteredNWSAlert) -> Event:
+		"""Create an event from a FilteredNWSAlert."""
+		return EventCreateService.create_event_from_alert(alert)
+
+	# Update Operations - delegate to EventUpdateService
+	@staticmethod
+	def update_event_from_alert(updateable_alert: FilteredNWSAlert) -> Optional[Event]:
+		"""Update an existing event from an updateable alert."""
+		return EventUpdateService.update_event_from_alert(updateable_alert)
+
+	# Completion Operations - delegate to EventCompletionService
+	@staticmethod
+	def check_completed_events():
+		"""Check for completed events that should be marked as inactive."""
+		return EventCompletionService.check_completed_events()

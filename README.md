@@ -12,7 +12,7 @@ tags:
 
 # QuantAgentic API
 
-A FastAPI-based API for managing disaster episodes and events with AI agents powered by CrewAI. Features automated background workers that poll the National Weather Service (NWS) API and intelligently classify alerts into episodes and events.
+A FastAPI-based API for managing disaster events with AI agents powered by CrewAI. Features automated background workers that poll the National Weather Service (NWS) API and intelligently classify alerts into events.
 
 [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/-NvLj4?referralCode=CRJ8FE)
 
@@ -27,7 +27,6 @@ A FastAPI-based API for managing disaster episodes and events with AI agents pow
 - **Shared state management** for API and agents
 - **Disaster Polling Agent** that automatically processes NWS alerts every 5 minutes
 - **VTEC Key Generation** for unique alert identification
-- **Polygon Overlap Detection** for event-episode mapping
 
 ## 🚀 Getting Started (Mac)
 
@@ -182,7 +181,7 @@ quantagentic_api/
 │   ├── celery_app.py                # Celery application configuration
 │   ├── redis_client.py              # Redis client wrapper (quantagent_redis)
 │   ├── state.py                     # Shared state object for API and agents
-│   ├── schemas/                     # Pydantic models (Location, Episode, Event)
+│   ├── schemas/                     # Pydantic models (Location, Event)
 │   ├── services/                    # Business logic layer
 │   ├── controllers/                 # FastAPI route handlers
 │   ├── http_client/                 # HTTP client for external APIs (NWS)
@@ -224,16 +223,10 @@ quantagentic_api/
 
 ## 🔌 API Endpoints
 
-### Episodes
-- `POST /episodes` - Create a new episode
-- `GET /episodes/{episode_id}` - Get episode by ID
-- `PUT /episodes/{episode_id}` - Update episode
-
 ### Events
 - `POST /events` - Create a new event
 - `GET /events/{event_key}` - Get event by key
 - `PUT /events/{event_key}` - Update event
-- `GET /events/{event_key}/has_episode` - Check if event has episode
 
 ## 🤖 Background Workers
 
@@ -248,10 +241,6 @@ The disaster polling agent is a CrewAI-powered background worker that:
 5. **Classifies alerts** into:
    - `new_events` - New warnings to create
    - `updated_events` - Existing warnings to update
-   - `new_episodes` - New watches to create
-   - `updated_episodes` - Existing watches to update
-
-The agent uses polygon overlap detection to link events (warnings) to episodes (watches) based on geographic coverage.
 
 **See**: `app/crews/disaster_polling_agent/README.md` for detailed documentation.
 
@@ -301,7 +290,6 @@ This project uses snake_case naming conventions throughout.
 - The API uses Pydantic models for request/response validation
 - All NWS API calls include the required User-Agent header
 - The shared state object (`app.state`) is accessible throughout the application
-- Episodes now include an `episode_key` field for VTEC-based identification
 - CrewAI tasks use structured Pydantic outputs for better agent memory and consistency
 
 ## 🔗 Useful Links

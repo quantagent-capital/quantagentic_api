@@ -23,6 +23,23 @@ class Settings:
 	# Celery configuration
 	executor_max_retries: int = int(os.getenv("EXECUTOR_MAX_RETRIES", "5"))
 	
+	# QuantAgentic API configuration
+	quantagentic_api_base_url: str = os.getenv("QUANTAGENTIC_API_BASE_URL", "http://localhost")
+	quantagent_api_port: int = int(os.getenv("QUANTAGENT_API_PORT", "8000"))
+
+	ugc_zone_base_url: str = os.getenv("UGC_ZONE_BASE_URL", "https://api.weather.gov/zones/county/")
+	
+	# Event completion checking configuration
+	event_completion_timeout_minutes: int = int(os.getenv("EVENT_COMPLETION_TIMEOUT_MINUTES", "20"))
+	
+	# NWS polling filter configuration
+	nws_polling_certainty: str = os.getenv("NWS_POLLING_CERTAINTY", "Observed,Likely")
+
+	@property
+	def quantagentic_api_url(self) -> str:
+		"""Full QuantAgentic API URL."""
+		return f"{self.quantagentic_api_base_url}:{self.quantagent_api_port}"
+	
 	@property
 	def celery_broker_url(self) -> str:
 		"""Celery broker URL - uses same Redis as application."""
