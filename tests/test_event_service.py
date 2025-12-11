@@ -116,7 +116,7 @@ class TestCreateEventFromAlert:
 		assert result.expected_end_date is None  # Should be None when expected_end is None
 		assert result.description == "\n\n"  # Empty headline and description
 	
-	@patch('app.services.event_completion_service.state')
+	@patch('app.services.event_create_service.state')
 	def test_create_event_from_alert_conflict_error(self, mock_state, sample_alert):
 		"""Test that ConflictError is raised when event already exists."""
 		# Setup
