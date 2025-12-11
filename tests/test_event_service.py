@@ -5,6 +5,7 @@ import pytest
 from unittest.mock import Mock, patch, AsyncMock, PropertyMock
 from datetime import datetime, timezone, timedelta
 from app.services.event_service import EventService
+from app.services.event_completion_service import EventCompletionService
 from app.shared_models.nws_poller_models import FilteredNWSAlert
 from app.schemas.event import Event
 from app.schemas.location import Location, Coordinate
@@ -51,7 +52,7 @@ class TestCreateEventFromAlert:
 			]
 		)
 	
-	@patch('app.services.event_service.state')
+	@patch('app.services.event_create_service.state')
 	def test_create_event_from_alert_success(self, mock_state, sample_alert):
 		"""Test successful event creation from alert."""
 		# Setup
@@ -77,7 +78,7 @@ class TestCreateEventFromAlert:
 		assert result.updated_at is not None
 		mock_state.add_event.assert_called_once_with(result)
 	
-	@patch('app.services.event_service.state')
+	@patch('app.services.event_create_service.state')
 	def test_create_event_from_alert_with_missing_dates(self, mock_state):
 		"""Test event creation when optional dates are missing."""
 		# Setup
@@ -115,7 +116,7 @@ class TestCreateEventFromAlert:
 		assert result.expected_end_date is None  # Should be None when expected_end is None
 		assert result.description == "\n\n"  # Empty headline and description
 	
-	@patch('app.services.event_service.state')
+	@patch('app.services.event_completion_service.state')
 	def test_create_event_from_alert_conflict_error(self, mock_state, sample_alert):
 		"""Test that ConflictError is raised when event already exists."""
 		# Setup
@@ -128,7 +129,7 @@ class TestCreateEventFromAlert:
 		assert "already exists" in str(exc_info.value)
 		assert sample_alert.key in str(exc_info.value)
 	
-	@patch('app.services.event_service.state')
+	@patch('app.services.event_create_service.state')
 	def test_create_event_from_alert_unknown_event_type(self, mock_state):
 		"""Test event creation with unknown event type."""
 		# Setup
@@ -163,7 +164,7 @@ class TestCreateEventFromAlert:
 		# Assertions
 		assert result.hr_event_type == "UNKNOWN"
 	
-	@patch('app.services.event_service.state')
+	@patch('app.services.event_create_service.state')
 	def test_create_event_from_alert_preserves_all_fields(self, mock_state, sample_alert):
 		"""Test that all alert fields are properly mapped to event."""
 		# Setup
@@ -252,11 +253,12 @@ class TestUpdateEventFromAlert:
 			]
 		)
 	
-	@patch('app.services.event_service.state')
-	def test_update_event_standard_update(self, mock_state, existing_event, update_alert):
+	@patch('app.services.event_crud_service.EventCRUDService.get_event')
+	@patch('app.services.event_update_service.state')
+	def test_update_event_standard_update(self, mock_state, mock_get_event, existing_event, update_alert):
 		"""Test standard update (CON message type) - merges locations and updates fields."""
 		# Setup
-		mock_state.get_event.return_value = existing_event
+		mock_get_event.return_value = existing_event
 		mock_state.update_event = Mock()
 		
 		# Execute
@@ -281,11 +283,12 @@ class TestUpdateEventFromAlert:
 		assert existing_event.nws_alert_id in result.previous_ids  # Old ID added
 		mock_state.update_event.assert_called_once_with(result)
 	
-	@patch('app.services.event_service.state')
-	def test_update_event_cor_message_type(self, mock_state, existing_event):
+	@patch('app.services.event_crud_service.EventCRUDService.get_event')
+	@patch('app.services.event_update_service.state')
+	def test_update_event_cor_message_type(self, mock_state, mock_get_event, existing_event):
 		"""Test COR (Correction) message type - replaces entire event."""
 		# Setup
-		mock_state.get_event.return_value = existing_event
+		mock_get_event.return_value = existing_event
 		mock_state.update_event = Mock()
 		
 		cor_alert = FilteredNWSAlert(
@@ -335,11 +338,12 @@ class TestUpdateEventFromAlert:
 		assert result.actual_end_date == existing_event.actual_end_date  # Preserved
 		assert existing_event.nws_alert_id in result.previous_ids
 	
-	@patch('app.services.event_service.state')
-	def test_update_event_upg_message_type(self, mock_state, existing_event):
+	@patch('app.services.event_crud_service.EventCRUDService.get_event')
+	@patch('app.services.event_update_service.state')
+	def test_update_event_upg_message_type(self, mock_state, mock_get_event, existing_event):
 		"""Test UPG (Update) message type - replaces entire event."""
 		# Setup
-		mock_state.get_event.return_value = existing_event
+		mock_get_event.return_value = existing_event
 		mock_state.update_event = Mock()
 		
 		upg_alert = FilteredNWSAlert(
@@ -384,11 +388,12 @@ class TestUpdateEventFromAlert:
 		assert "Upgraded Tornado Warning" in result.description
 		assert existing_event.nws_alert_id in result.previous_ids
 	
-	@patch('app.services.event_service.state')
-	def test_update_event_can_message_type(self, mock_state, existing_event):
+	@patch('app.services.event_crud_service.EventCRUDService.get_event')
+	@patch('app.services.event_update_service.state')
+	def test_update_event_can_message_type(self, mock_state, mock_get_event, existing_event):
 		"""Test CAN (Cancel) message type - returns None as it's handled by check_completed_events."""
 		# Setup
-		mock_state.get_event.return_value = existing_event
+		mock_get_event.return_value = existing_event
 		mock_state.update_event = Mock()
 		
 		can_alert = FilteredNWSAlert(
@@ -421,11 +426,12 @@ class TestUpdateEventFromAlert:
 		# Should not update event (handled by check_completed_events instead)
 		mock_state.update_event.assert_not_called()
 	
-	@patch('app.services.event_service.state')
-	def test_update_event_exp_message_type(self, mock_state, existing_event):
+	@patch('app.services.event_crud_service.EventCRUDService.get_event')
+	@patch('app.services.event_update_service.state')
+	def test_update_event_exp_message_type(self, mock_state, mock_get_event, existing_event):
 		"""Test EXP (Expired) message type - returns None as it's handled by check_completed_events."""
 		# Setup
-		mock_state.get_event.return_value = existing_event
+		mock_get_event.return_value = existing_event
 		mock_state.update_event = Mock()
 		
 		exp_alert = FilteredNWSAlert(
@@ -458,11 +464,12 @@ class TestUpdateEventFromAlert:
 		# Should not update event (handled by check_completed_events instead)
 		mock_state.update_event.assert_not_called()
 	
-	@patch('app.services.event_service.state')
-	def test_update_event_merges_locations(self, mock_state, existing_event):
+	@patch('app.services.event_crud_service.EventCRUDService.get_event')
+	@patch('app.services.event_update_service.state')
+	def test_update_event_merges_locations(self, mock_state, mock_get_event, existing_event):
 		"""Test that standard update merges locations without duplicates."""
 		# Setup
-		mock_state.get_event.return_value = existing_event
+		mock_get_event.return_value = existing_event
 		mock_state.update_event = Mock()
 		
 		# Create alert with new location
@@ -507,11 +514,12 @@ class TestUpdateEventFromAlert:
 		assert "TXC113" in ugc_codes
 		assert "TXC215" in ugc_codes
 	
-	@patch('app.services.event_service.state')
-	def test_update_event_no_duplicate_locations(self, mock_state, existing_event):
+	@patch('app.services.event_crud_service.EventCRUDService.get_event')
+	@patch('app.services.event_update_service.state')
+	def test_update_event_no_duplicate_locations(self, mock_state, mock_get_event, existing_event):
 		"""Test that duplicate locations (same ugc_code) are not added."""
 		# Setup
-		mock_state.get_event.return_value = existing_event
+		mock_get_event.return_value = existing_event
 		mock_state.update_event = Mock()
 		
 		# Create alert with same location as existing
@@ -554,22 +562,25 @@ class TestUpdateEventFromAlert:
 		assert len(result.locations) == 1  # No duplicate added
 		assert result.locations[0].ugc_code == "TXC113"
 	
-	@patch('app.services.event_service.state')
-	def test_update_event_not_found_error(self, mock_state, update_alert):
+	@patch('app.services.event_crud_service.EventCRUDService.get_event')
+	@patch('app.services.event_update_service.state')
+	def test_update_event_not_found_error(self, mock_state, mock_get_event, update_alert):
 		"""Test that NotFoundError is raised when event doesn't exist."""
 		# Setup
-		mock_state.get_event.return_value = None
+		from app.exceptions import NotFoundError
+		mock_get_event.side_effect = NotFoundError("Event", update_alert.key)
 		
 		# Execute & Assert
 		with pytest.raises(NotFoundError):
 			EventService.update_event_from_alert(update_alert)
 	
-	@patch('app.services.event_service.state')
-	def test_update_event_tracks_previous_ids(self, mock_state, existing_event, update_alert):
+	@patch('app.services.event_crud_service.EventCRUDService.get_event')
+	@patch('app.services.event_update_service.state')
+	def test_update_event_tracks_previous_ids(self, mock_state, mock_get_event, existing_event, update_alert):
 		"""Test that previous alert IDs are tracked correctly."""
 		# Setup
 		existing_event.previous_ids = ["old-alert-1", "old-alert-2"]
-		mock_state.get_event.return_value = existing_event
+		mock_get_event.return_value = existing_event
 		mock_state.update_event = Mock()
 		
 		# Execute
@@ -581,12 +592,13 @@ class TestUpdateEventFromAlert:
 		assert "old-alert-2" in result.previous_ids
 		assert existing_event.nws_alert_id in result.previous_ids
 	
-	@patch('app.services.event_service.state')
-	def test_update_event_no_duplicate_previous_id(self, mock_state, existing_event):
+	@patch('app.services.event_crud_service.EventCRUDService.get_event')
+	@patch('app.services.event_update_service.state')
+	def test_update_event_no_duplicate_previous_id(self, mock_state, mock_get_event, existing_event):
 		"""Test that current alert ID is not added to previous_ids if already there."""
 		# Setup
 		existing_event.previous_ids = [existing_event.nws_alert_id]  # Already in list
-		mock_state.get_event.return_value = existing_event
+		mock_get_event.return_value = existing_event
 		mock_state.update_event = Mock()
 		
 		update_alert = FilteredNWSAlert(
@@ -617,11 +629,12 @@ class TestUpdateEventFromAlert:
 		# Assertions - should only have one instance of the old alert ID
 		assert result.previous_ids.count(existing_event.nws_alert_id) == 1
 	
-	@patch('app.services.event_service.state')
-	def test_update_event_case_insensitive_message_type(self, mock_state, existing_event):
+	@patch('app.services.event_crud_service.EventCRUDService.get_event')
+	@patch('app.services.event_update_service.state')
+	def test_update_event_case_insensitive_message_type(self, mock_state, mock_get_event, existing_event):
 		"""Test that message type comparison is case-insensitive."""
 		# Setup
-		mock_state.get_event.return_value = existing_event
+		mock_get_event.return_value = existing_event
 		mock_state.update_event = Mock()
 		
 		# Use lowercase message type
@@ -653,11 +666,12 @@ class TestUpdateEventFromAlert:
 		# Assertions - CAN/EXP are now handled by check_completed_events, so this returns None
 		assert result is None
 	
-	@patch('app.services.event_service.state')
-	def test_update_event_with_missing_expected_end(self, mock_state, existing_event):
+	@patch('app.services.event_crud_service.EventCRUDService.get_event')
+	@patch('app.services.event_update_service.state')
+	def test_update_event_with_missing_expected_end(self, mock_state, mock_get_event, existing_event):
 		"""Test update when expected_end is None."""
 		# Setup
-		mock_state.get_event.return_value = existing_event
+		mock_get_event.return_value = existing_event
 		mock_state.update_event = Mock()
 		
 		update_alert = FilteredNWSAlert(
@@ -691,354 +705,6 @@ class TestUpdateEventFromAlert:
 		if update_alert.message_type in ["CAN", "EXP"]:
 			# This would be tested in a separate test, but here we're testing CON
 			pass
-
-
-class TestExtractPropertiesFromAlert:
-	"""Test cases for EventService._extract_properties_from_alert."""
-	
-	def test_extract_properties_from_features_array(self):
-		"""Test extracting properties from GeoJSON FeatureCollection format."""
-		alert_data = {
-			"features": [
-				{
-					"properties": {
-						"id": "test-alert-1",
-						"headline": "Test Alert"
-					}
-				}
-			]
-		}
-		
-		result = EventService._extract_properties_from_alert(alert_data)
-		
-		assert result is not None
-		assert result["id"] == "test-alert-1"
-		assert result["headline"] == "Test Alert"
-	
-	def test_extract_properties_from_direct_properties(self):
-		"""Test extracting properties from direct properties format."""
-		alert_data = {
-			"properties": {
-				"id": "test-alert-2",
-				"headline": "Test Alert 2"
-			}
-		}
-		
-		result = EventService._extract_properties_from_alert(alert_data)
-		
-		assert result is not None
-		assert result["id"] == "test-alert-2"
-		assert result["headline"] == "Test Alert 2"
-	
-	def test_extract_properties_empty_features_array(self):
-		"""Test handling empty features array."""
-		alert_data = {
-			"features": []
-		}
-		
-		result = EventService._extract_properties_from_alert(alert_data, "test-id")
-		
-		assert result is None
-	
-	def test_extract_properties_missing_properties_in_feature(self):
-		"""Test handling feature without properties."""
-		alert_data = {
-			"features": [
-				{
-					"geometry": {}
-				}
-			]
-		}
-		
-		result = EventService._extract_properties_from_alert(alert_data, "test-id")
-		
-		assert result is None
-	
-	def test_extract_properties_no_features_or_properties(self):
-		"""Test handling alert data with neither features nor properties."""
-		alert_data = {
-			"type": "FeatureCollection"
-		}
-		
-		result = EventService._extract_properties_from_alert(alert_data, "test-id")
-		
-		assert result is None
-	
-	def test_extract_properties_empty_properties(self):
-		"""Test handling empty properties dictionary."""
-		alert_data = {
-			"properties": {}
-		}
-		
-		result = EventService._extract_properties_from_alert(alert_data)
-		
-		assert result is None
-
-
-class TestGetMostRecentAlert:
-	"""Test cases for EventService._get_most_recent_alert."""
-	
-	@pytest.mark.asyncio
-	async def test_get_most_recent_alert_no_replaced_by(self):
-		"""Test getting alert when there's no replacedBy property."""
-		client = AsyncMock()
-		alert_data = {
-			"features": [
-				{
-					"properties": {
-						"id": "alert-1",
-						"replacedBy": None
-					}
-				}
-			]
-		}
-		client.get_alert_by_id = AsyncMock(return_value=alert_data)
-		
-		result = await EventService._get_most_recent_alert(client, "alert-1")
-		
-		assert result == alert_data
-		client.get_alert_by_id.assert_called_once_with("alert-1")
-	
-	@pytest.mark.asyncio
-	async def test_get_most_recent_alert_follows_replaced_by(self):
-		"""Test following replacedBy link to get most recent alert."""
-		client = AsyncMock()
-		
-		# First alert with replacedBy
-		alert_1 = {
-			"features": [
-				{
-					"properties": {
-						"id": "alert-1",
-						"replacedBy": "https://api.weather.gov/alerts/alert-2"
-					}
-				}
-			]
-		}
-		
-		# Second alert (most recent, no replacedBy)
-		alert_2 = {
-			"features": [
-				{
-					"properties": {
-						"id": "alert-2",
-						"replacedBy": None
-					}
-				}
-			]
-		}
-		
-		client.get_alert_by_id = AsyncMock(side_effect=[alert_1, alert_2])
-		
-		result = await EventService._get_most_recent_alert(client, "alert-1")
-		
-		assert result == alert_2
-		assert client.get_alert_by_id.call_count == 2
-		client.get_alert_by_id.assert_any_call("alert-1")
-		client.get_alert_by_id.assert_any_call("alert-2")
-	
-	@pytest.mark.asyncio
-	async def test_get_most_recent_alert_multiple_replaced_by(self):
-		"""Test following multiple replacedBy links."""
-		client = AsyncMock()
-		
-		alert_1 = {
-			"features": [{"properties": {"id": "alert-1", "replacedBy": "https://api.weather.gov/alerts/alert-2"}}]
-		}
-		alert_2 = {
-			"features": [{"properties": {"id": "alert-2", "replacedBy": "https://api.weather.gov/alerts/alert-3"}}]
-		}
-		alert_3 = {
-			"features": [{"properties": {"id": "alert-3", "replacedBy": None}}]
-		}
-		
-		client.get_alert_by_id = AsyncMock(side_effect=[alert_1, alert_2, alert_3])
-		
-		result = await EventService._get_most_recent_alert(client, "alert-1")
-		
-		assert result == alert_3
-		assert client.get_alert_by_id.call_count == 3
-	
-	@pytest.mark.asyncio
-	async def test_get_most_recent_alert_handles_url_with_query_params(self):
-		"""Test handling replacedBy URL with query parameters."""
-		client = AsyncMock()
-		
-		alert_1 = {
-			"features": [{"properties": {"id": "alert-1", "replacedBy": "https://api.weather.gov/alerts/alert-2?param=value"}}]
-		}
-		alert_2 = {
-			"features": [{"properties": {"id": "alert-2", "replacedBy": None}}]
-		}
-		
-		client.get_alert_by_id = AsyncMock(side_effect=[alert_1, alert_2])
-		
-		result = await EventService._get_most_recent_alert(client, "alert-1")
-		
-		assert result == alert_2
-		client.get_alert_by_id.assert_any_call("alert-2")
-	
-	@pytest.mark.asyncio
-	async def test_get_most_recent_alert_max_iterations(self):
-		"""Test that max iterations prevents infinite loops."""
-		client = AsyncMock()
-		
-		# Create a chain that exceeds max iterations
-		alert_with_replaced_by = {
-			"features": [{"properties": {"id": "alert-1", "replacedBy": "https://api.weather.gov/alerts/alert-2"}}]
-		}
-		
-		client.get_alert_by_id = AsyncMock(return_value=alert_with_replaced_by)
-		
-		result = await EventService._get_most_recent_alert(client, "alert-1")
-		
-		# Should return the last alert after max iterations
-		assert result == alert_with_replaced_by
-		assert client.get_alert_by_id.call_count == 10
-	
-	@pytest.mark.asyncio
-	async def test_get_most_recent_alert_handles_exception(self):
-		"""Test handling exceptions when fetching alerts."""
-		client = AsyncMock()
-		client.get_alert_by_id = AsyncMock(side_effect=Exception("API Error"))
-		
-		result = await EventService._get_most_recent_alert(client, "alert-1")
-		
-		assert result is None
-	
-	@pytest.mark.asyncio
-	async def test_get_most_recent_alert_unexpected_replaced_by_format(self):
-		"""Test handling unexpected replacedBy format."""
-		client = AsyncMock()
-		
-		alert_data = {
-			"features": [
-				{
-					"properties": {
-						"id": "alert-1",
-						"replacedBy": "invalid-format"
-					}
-				}
-			]
-		}
-		
-		client.get_alert_by_id = AsyncMock(return_value=alert_data)
-		
-		result = await EventService._get_most_recent_alert(client, "alert-1")
-		
-		# Should return the alert data even with invalid replacedBy format
-		assert result == alert_data
-
-
-class TestExtractActualEndTime:
-	"""Test cases for EventService._extract_actual_end_time."""
-	
-	def test_extract_actual_end_time_from_event_ending_time(self):
-		"""Test extracting end time from eventEndingTime parameter."""
-		alert_data = {
-			"features": [
-				{
-					"properties": {
-						"parameters": {
-							"eventEndingTime": ["2024-01-15T12:00:00-06:00"]
-						}
-					}
-				}
-			]
-		}
-		
-		result = EventService._extract_actual_end_time(alert_data)
-		
-		assert result is not None
-		assert result.year == 2024
-		assert result.month == 1
-		assert result.day == 15
-	
-	def test_extract_actual_end_time_fallback_to_ends(self):
-		"""Test fallback to ends property when eventEndingTime is missing."""
-		alert_data = {
-			"features": [
-				{
-					"properties": {
-						"ends": "2024-01-15T11:00:00-06:00"
-					}
-				}
-			]
-		}
-		
-		result = EventService._extract_actual_end_time(alert_data)
-		
-		assert result is not None
-		assert result.year == 2024
-	
-	def test_extract_actual_end_time_fallback_to_expires(self):
-		"""Test fallback to expires property when eventEndingTime and ends are missing."""
-		alert_data = {
-			"features": [
-				{
-					"properties": {
-						"expires": "2024-01-15T13:00:00-06:00"
-					}
-				}
-			]
-		}
-		
-		result = EventService._extract_actual_end_time(alert_data)
-		
-		assert result is not None
-		assert result.year == 2024
-	
-	def test_extract_actual_end_time_fallback_to_current_time(self):
-		"""Test fallback to current time when all other options are missing."""
-		alert_data = {
-			"features": [
-				{
-					"properties": {}
-				}
-			]
-		}
-		
-		before = datetime.now(timezone.utc)
-		result = EventService._extract_actual_end_time(alert_data)
-		after = datetime.now(timezone.utc)
-		
-		assert result is not None
-		assert before <= result <= after
-	
-	def test_extract_actual_end_time_empty_event_ending_time_list(self):
-		"""Test handling empty eventEndingTime list."""
-		alert_data = {
-			"features": [
-				{
-					"properties": {
-						"parameters": {
-							"eventEndingTime": []
-						},
-						"ends": "2024-01-15T11:00:00-06:00"
-					}
-				}
-			]
-		}
-		
-		result = EventService._extract_actual_end_time(alert_data)
-		
-		# Should fallback to ends
-		assert result is not None
-		assert result.year == 2024
-	
-	def test_extract_actual_end_time_invalid_properties(self):
-		"""Test handling alert data with invalid properties structure."""
-		alert_data = {
-			"invalid": "structure"
-		}
-		
-		before = datetime.now(timezone.utc)
-		result = EventService._extract_actual_end_time(alert_data)
-		after = datetime.now(timezone.utc)
-		
-		# Should fallback to current time
-		assert result is not None
-		assert before <= result <= after
 
 
 class TestCheckCompletedEvents:
@@ -1085,8 +751,8 @@ class TestCheckCompletedEvents:
 			previous_ids=[]
 		)
 	
-	@patch('app.services.event_service.state')
-	@patch('app.services.event_service.asyncio.run')
+	@patch('app.services.event_completion_service.state')
+	@patch('app.services.event_completion_service.asyncio.run')
 	def test_check_completed_events_no_active_events(self, mock_asyncio_run, mock_state):
 		"""Test when there are no active events."""
 		type(mock_state).active_events = PropertyMock(return_value=[])
@@ -1095,8 +761,8 @@ class TestCheckCompletedEvents:
 		
 		mock_asyncio_run.assert_not_called()
 	
-	@patch('app.services.event_service.state')
-	@patch('app.services.event_service.asyncio.run')
+	@patch('app.services.event_completion_service.state')
+	@patch('app.services.event_completion_service.asyncio.run')
 	def test_check_completed_events_no_events_past_end_date(self, mock_asyncio_run, mock_state, active_event_future_end_date):
 		"""Test when no events are past their expected end date."""
 		type(mock_state).active_events = PropertyMock(return_value=[active_event_future_end_date])
@@ -1105,8 +771,8 @@ class TestCheckCompletedEvents:
 		
 		mock_asyncio_run.assert_not_called()
 	
-	@patch('app.services.event_service.state')
-	@patch('app.services.event_service.asyncio.run')
+	@patch('app.services.event_completion_service.state')
+	@patch('app.services.event_completion_service.asyncio.run')
 	def test_check_completed_events_filters_by_end_date(self, mock_asyncio_run, mock_state, active_event_past_end_date, active_event_future_end_date):
 		"""Test that only events past expected end date are checked."""
 		type(mock_state).active_events = PropertyMock(return_value=[active_event_past_end_date, active_event_future_end_date])
@@ -1118,11 +784,11 @@ class TestCheckCompletedEvents:
 		# Verify it was called (the coroutine will be passed to asyncio.run)
 		assert mock_asyncio_run.called
 	
-	@patch('app.services.event_service.state')
-	@patch('app.services.event_service.NWSClient')
-	@patch('app.services.event_service.vtec.get_message_type')
-	@patch('app.services.event_service.EventService._get_most_recent_alert')
-	@patch('app.services.event_service.EventService._extract_actual_end_time')
+	@patch('app.services.event_completion_service.state')
+	@patch('app.services.event_completion_service.NWSClient')
+	@patch('app.services.event_completion_service.vtec.get_message_type')
+	@patch('app.utils.nws_alert_parser.NWSAlertParser.get_most_recent_alert')
+	@patch('app.utils.nws_alert_parser.NWSAlertParser.extract_actual_end_time')
 	@pytest.mark.asyncio
 	async def test_check_completed_events_can_message_type(self, mock_extract_time, mock_get_alert, mock_get_message_type, mock_client_class, mock_state, active_event_past_end_date):
 		"""Test that events with CAN message type are marked inactive."""
@@ -1140,7 +806,7 @@ class TestCheckCompletedEvents:
 		mock_client.close = AsyncMock()
 		mock_client_class.return_value = mock_client
 		
-		await EventService._async_check_completed_events([active_event_past_end_date])
+		await EventCompletionService._async_check_completed_events([active_event_past_end_date])
 		
 		# Should update event to inactive
 		mock_state.update_event.assert_called_once()
@@ -1148,12 +814,12 @@ class TestCheckCompletedEvents:
 		assert updated_event.is_active is False
 		assert updated_event.actual_end_date is not None
 	
-	@patch('app.services.event_service.state')
-	@patch('app.services.event_service.NWSClient')
-	@patch('app.services.event_service.vtec.get_message_type')
-	@patch('app.services.event_service.EventService._get_most_recent_alert')
-	@patch('app.services.event_service.EventService._extract_actual_end_time')
-	@patch('app.services.event_service.settings')
+	@patch('app.services.event_completion_service.state')
+	@patch('app.services.event_completion_service.NWSClient')
+	@patch('app.services.event_completion_service.vtec.get_message_type')
+	@patch('app.utils.nws_alert_parser.NWSAlertParser.get_most_recent_alert')
+	@patch('app.utils.nws_alert_parser.NWSAlertParser.extract_actual_end_time')
+	@patch('app.services.event_completion_service.settings')
 	@pytest.mark.asyncio
 	async def test_check_completed_events_timeout_threshold(self, mock_settings, mock_extract_time, mock_get_alert, mock_get_message_type, mock_client_class, mock_state):
 		"""Test that events past timeout threshold are marked inactive."""
@@ -1191,18 +857,18 @@ class TestCheckCompletedEvents:
 		mock_client.close = AsyncMock()
 		mock_client_class.return_value = mock_client
 		
-		await EventService._async_check_completed_events([event])
+		await EventCompletionService._async_check_completed_events([event])
 		
 		# Should update event to inactive due to timeout
 		mock_state.update_event.assert_called_once()
 		updated_event = mock_state.update_event.call_args[0][0]
 		assert updated_event.is_active is False
 	
-	@patch('app.services.event_service.state')
-	@patch('app.services.event_service.NWSClient')
-	@patch('app.services.event_service.vtec.get_message_type')
-	@patch('app.services.event_service.EventService._get_most_recent_alert')
-	@patch('app.services.event_service.settings')
+	@patch('app.services.event_completion_service.state')
+	@patch('app.services.event_completion_service.NWSClient')
+	@patch('app.services.event_completion_service.vtec.get_message_type')
+	@patch('app.services.event_completion_service.NWSAlertParser.get_most_recent_alert')
+	@patch('app.services.event_completion_service.settings')
 	@pytest.mark.asyncio
 	async def test_check_completed_events_not_past_timeout(self, mock_settings, mock_get_alert, mock_get_message_type, mock_client_class, mock_state):
 		"""Test that events not past timeout threshold are not marked inactive."""
@@ -1239,14 +905,14 @@ class TestCheckCompletedEvents:
 		mock_client.close = AsyncMock()
 		mock_client_class.return_value = mock_client
 		
-		await EventService._async_check_completed_events([event])
+		await EventCompletionService._async_check_completed_events([event])
 		
 		# Should NOT update event (not past timeout)
 		mock_state.update_event.assert_not_called()
 	
-	@patch('app.services.event_service.state')
-	@patch('app.services.event_service.NWSClient')
-	@patch('app.services.event_service.EventService._get_most_recent_alert')
+	@patch('app.services.event_completion_service.state')
+	@patch('app.services.event_completion_service.NWSClient')
+	@patch('app.services.event_completion_service.NWSAlertParser.get_most_recent_alert')
 	@pytest.mark.asyncio
 	async def test_check_completed_events_handles_missing_alert(self, mock_get_alert, mock_client_class, mock_state, active_event_past_end_date):
 		"""Test handling when alert cannot be retrieved."""
@@ -1258,14 +924,14 @@ class TestCheckCompletedEvents:
 		mock_client.close = AsyncMock()
 		mock_client_class.return_value = mock_client
 		
-		await EventService._async_check_completed_events([active_event_past_end_date])
+		await EventCompletionService._async_check_completed_events([active_event_past_end_date])
 		
 		# Should not update event
 		mock_state.update_event.assert_not_called()
 	
-	@patch('app.services.event_service.state')
-	@patch('app.services.event_service.NWSClient')
-	@patch('app.services.event_service.EventService._get_most_recent_alert')
+	@patch('app.services.event_completion_service.state')
+	@patch('app.services.event_completion_service.NWSClient')
+	@patch('app.services.event_completion_service.NWSAlertParser.get_most_recent_alert')
 	@pytest.mark.asyncio
 	async def test_check_completed_events_handles_exception(self, mock_get_alert, mock_client_class, mock_state, active_event_past_end_date):
 		"""Test handling exceptions during processing."""
@@ -1278,7 +944,7 @@ class TestCheckCompletedEvents:
 		mock_client_class.return_value = mock_client
 		
 		# Should not raise exception, just log and continue
-		await EventService._async_check_completed_events([active_event_past_end_date])
+		await EventCompletionService._async_check_completed_events([active_event_past_end_date])
 		
 		# Should not update event
 		mock_state.update_event.assert_not_called()
@@ -1407,7 +1073,7 @@ class TestStateActiveEvents:
 class TestGetEvents:
 	"""Test cases for EventService.get_events filtering functionality."""
 	
-	@patch('app.services.event_service.state')
+	@patch('app.services.event_crud_service.state')
 	def test_get_events_default_hour_offset(self, mock_state):
 		"""Test get_events with default 72 hour offset."""
 		now = datetime.now(timezone.utc)
@@ -1457,7 +1123,7 @@ class TestGetEvents:
 		assert len(result) == 1
 		assert result[0].event_key == "event-1"
 	
-	@patch('app.services.event_service.state')
+	@patch('app.services.event_crud_service.state')
 	def test_get_events_custom_hour_offset(self, mock_state):
 		"""Test get_events with custom hour offset."""
 		now = datetime.now(timezone.utc)
@@ -1496,7 +1162,7 @@ class TestGetEvents:
 		assert len(result) == 1
 		assert result[0].event_key == "event-24h"
 	
-	@patch('app.services.event_service.state')
+	@patch('app.services.event_crud_service.state')
 	def test_get_events_includes_events_with_null_actual_end_date_only(self, mock_state):
 		"""Test that events with null actual_end_date are always included (start_date is required)."""
 		now = datetime.now(timezone.utc)
@@ -1534,7 +1200,7 @@ class TestGetEvents:
 		assert len(result) == 1
 		assert result[0].event_key == "event-null-end"
 	
-	@patch('app.services.event_service.state')
+	@patch('app.services.event_crud_service.state')
 	def test_get_events_includes_events_with_null_actual_end_date(self, mock_state):
 		"""Test that events with null actual_end_date are always included."""
 		now = datetime.now(timezone.utc)
@@ -1570,7 +1236,7 @@ class TestGetEvents:
 		assert len(result) == 1
 		assert result[0].event_key == "event-null-end"
 	
-	@patch('app.services.event_service.state')
+	@patch('app.services.event_crud_service.state')
 	def test_get_events_includes_events_with_null_actual_end_date(self, mock_state):
 		"""Test that events with null actual_end_date are always included."""
 		now = datetime.now(timezone.utc)
@@ -1596,7 +1262,7 @@ class TestGetEvents:
 		assert len(result) == 1
 		assert result[0].event_key == "event-null-end"
 	
-	@patch('app.services.event_service.state')
+	@patch('app.services.event_crud_service.state')
 	def test_get_events_with_zero_hour_offset_returns_all(self, mock_state):
 		"""Test that hour_offset of 0 or less returns all events."""
 		event1 = Event(
@@ -1628,7 +1294,7 @@ class TestGetEvents:
 		# Should return all events
 		assert len(result) == 2
 	
-	@patch('app.services.event_service.state')
+	@patch('app.services.event_crud_service.state')
 	def test_get_events_boundary_conditions(self, mock_state):
 		"""Test get_events with boundary conditions (time_point within range)."""
 		# Use a fixed time point to avoid timing issues
@@ -1713,7 +1379,7 @@ class TestGetEvents:
 class TestConfirmedFunctionality:
 	"""Test cases for confirmed field functionality."""
 	
-	@patch('app.services.event_service.state')
+	@patch('app.services.event_create_service.state')
 	def test_create_event_with_observed_certainty_sets_confirmed_true(self, mock_state):
 		"""Test that creating an event with certainty='Observed' sets confirmed=True."""
 		mock_state.event_exists.return_value = False
@@ -1745,7 +1411,7 @@ class TestConfirmedFunctionality:
 		
 		assert result.confirmed is True
 	
-	@patch('app.services.event_service.state')
+	@patch('app.services.event_create_service.state')
 	def test_create_event_with_non_observed_certainty_sets_confirmed_false(self, mock_state):
 		"""Test that creating an event with certainty != 'Observed' sets confirmed=False."""
 		mock_state.event_exists.return_value = False
@@ -1777,7 +1443,7 @@ class TestConfirmedFunctionality:
 		
 		assert result.confirmed is False
 	
-	@patch('app.services.event_service.state')
+	@patch('app.services.event_create_service.state')
 	def test_create_event_with_case_insensitive_observed_certainty(self, mock_state):
 		"""Test that certainty check is case-insensitive."""
 		mock_state.event_exists.return_value = False
@@ -1836,8 +1502,9 @@ class TestConfirmedFunctionality:
 		result = EventService.create_event_from_alert(alert_mixed)
 		assert result.confirmed is True
 	
-	@patch('app.services.event_service.state')
-	def test_update_event_with_observed_certainty_sets_confirmed_true(self, mock_state):
+	@patch('app.services.event_crud_service.EventCRUDService.get_event')
+	@patch('app.services.event_update_service.state')
+	def test_update_event_with_observed_certainty_sets_confirmed_true(self, mock_state, mock_get_event):
 		"""Test that updating an event with certainty='Observed' sets confirmed=True."""
 		existing_event = Event(
 			event_key="KFWD.TO.W.0015.2024",
@@ -1872,15 +1539,16 @@ class TestConfirmedFunctionality:
 			locations=[]
 		)
 		
-		mock_state.get_event.return_value = existing_event
+		mock_get_event.return_value = existing_event
 		mock_state.update_event = Mock()
 		
 		result = EventService.update_event_from_alert(update_alert)
 		
 		assert result.confirmed is True
 	
-	@patch('app.services.event_service.state')
-	def test_update_event_preserves_confirmed_if_already_true(self, mock_state):
+	@patch('app.services.event_crud_service.EventCRUDService.get_event')
+	@patch('app.services.event_update_service.state')
+	def test_update_event_preserves_confirmed_if_already_true(self, mock_state, mock_get_event):
 		"""Test that updating an event preserves confirmed=True if already set."""
 		existing_event = Event(
 			event_key="KFWD.TO.W.0015.2024",
@@ -1915,7 +1583,7 @@ class TestConfirmedFunctionality:
 			locations=[]
 		)
 		
-		mock_state.get_event.return_value = existing_event
+		mock_get_event.return_value = existing_event
 		mock_state.update_event = Mock()
 		
 		result = EventService.update_event_from_alert(update_alert)
@@ -1923,8 +1591,9 @@ class TestConfirmedFunctionality:
 		# Should preserve confirmed=True even though new alert is not observed
 		assert result.confirmed is True
 	
-	@patch('app.services.event_service.state')
-	def test_replace_event_with_observed_certainty_sets_confirmed_true(self, mock_state):
+	@patch('app.services.event_crud_service.EventCRUDService.get_event')
+	@patch('app.services.event_update_service.state')
+	def test_replace_event_with_observed_certainty_sets_confirmed_true(self, mock_state, mock_get_event):
 		"""Test that replacing an event (COR/UPG) with certainty='Observed' sets confirmed=True."""
 		existing_event = Event(
 			event_key="KFWD.TO.W.0015.2024",
@@ -1959,14 +1628,14 @@ class TestConfirmedFunctionality:
 			locations=[]
 		)
 		
-		mock_state.get_event.return_value = existing_event
+		mock_get_event.return_value = existing_event
 		mock_state.update_event = Mock()
 		
 		result = EventService.update_event_from_alert(cor_alert)
 		
 		assert result.confirmed is True
 	
-	@patch('app.services.event_service.state')
+	@patch('app.services.event_create_service.state')
 	def test_create_event_with_empty_certainty_sets_confirmed_false(self, mock_state):
 		"""Test that creating an event with empty certainty string sets confirmed=False."""
 		mock_state.event_exists.return_value = False
