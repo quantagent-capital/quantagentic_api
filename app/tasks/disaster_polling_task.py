@@ -36,16 +36,14 @@ def disaster_polling_task(self):
 		# We are looking for observed events, thus, these typically come in as "updates" from the NWS API.
 		# Thus, if we don't have the event, then it is new to us.
 		alerts_for_non_existing_events, alerts_for_existing_events = _separate_alerts_for_existing_events(filtered_alerts)
-		logger.info(f"Found {len(alerts_for_non_existing_events)} alerts for NON-EXISTING events")
-		logger.info(f"Found {len(alerts_for_existing_events)} alerts for EXISTING events")
 
 		# For alerts that link to existing events, check if they need updates or are duplicates
 		alerts_for_updateable_events = _filter_out_preprocessed_alerts(alerts_for_existing_events)
-		logger.info(f"Found {len(alerts_for_updateable_events)} alerts which link to updateable events")
-		logger.info(f"Discarded {len(alerts_for_existing_events) - len(alerts_for_updateable_events)} preprocessed alerts")
 	
 		_process_new_events(alerts_for_non_existing_events)
 		_process_updateable_events(alerts_for_updateable_events)
+		_check_completed_events()
+	
 	except Exception as e:
 		logger.error("=" * 80)
 		logger.error(f"Disaster polling task FAILED: {str(e)}")
@@ -172,3 +170,20 @@ def _process_updateable_events(updateable_events: List[FilteredNWSAlert]):
 			logger.error(f"Error updating event from alert: {alert.alert_id} via service layer: {str(e)}")
 			import traceback
 			logger.error(traceback.format_exc())
+
+@staticmethod
+def _check_completed_events():
+	"""
+	Check for completed events that should be marked as inactive.
+	
+	Calls EventService.check_completed_events to perform the check.
+	"""
+	try:
+		logger.info("Checking for completed events...")
+		EventService.check_completed_events()
+		logger.info("Finished checking for completed events")
+	except Exception as e:
+		# Log error but don't fail the entire task
+		logger.error(f"Error checking completed events: {str(e)}")
+		import traceback
+		logger.error(traceback.format_exc())

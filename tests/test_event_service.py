@@ -2,8 +2,8 @@
 Comprehensive unit tests for EventService methods.
 """
 import pytest
-from unittest.mock import Mock, patch
-from datetime import datetime, timezone
+from unittest.mock import Mock, patch, AsyncMock, PropertyMock
+from datetime import datetime, timezone, timedelta
 from app.services.event_service import EventService
 from app.shared_models.nws_poller_models import FilteredNWSAlert
 from app.schemas.event import Event
@@ -386,7 +386,7 @@ class TestUpdateEventFromAlert:
 	
 	@patch('app.services.event_service.state')
 	def test_update_event_can_message_type(self, mock_state, existing_event):
-		"""Test CAN (Cancel) message type - marks event as inactive."""
+		"""Test CAN (Cancel) message type - returns None as it's handled by check_completed_events."""
 		# Setup
 		mock_state.get_event.return_value = existing_event
 		mock_state.update_event = Mock()
@@ -416,20 +416,14 @@ class TestUpdateEventFromAlert:
 		# Execute
 		result = EventService.update_event_from_alert(can_alert)
 		
-		# Assertions
-		assert result.is_active is False  # Marked inactive
-		assert result.actual_end_date is not None  # Set from expected_end
-		assert result.nws_alert_id == can_alert.alert_id
-		assert result.episode_key == existing_event.episode_key  # Preserved
-		assert result.event_type == existing_event.event_type  # Preserved
-		assert result.locations == existing_event.locations  # Preserved
-		assert result.description == existing_event.description  # Preserved
-		assert result.property_damage == existing_event.property_damage  # Preserved
-		assert existing_event.nws_alert_id in result.previous_ids
+		# Assertions - CAN/EXP are now handled by check_completed_events, so this returns None
+		assert result is None
+		# Should not update event (handled by check_completed_events instead)
+		mock_state.update_event.assert_not_called()
 	
 	@patch('app.services.event_service.state')
 	def test_update_event_exp_message_type(self, mock_state, existing_event):
-		"""Test EXP (Expired) message type - marks event as inactive."""
+		"""Test EXP (Expired) message type - returns None as it's handled by check_completed_events."""
 		# Setup
 		mock_state.get_event.return_value = existing_event
 		mock_state.update_event = Mock()
@@ -459,10 +453,10 @@ class TestUpdateEventFromAlert:
 		# Execute
 		result = EventService.update_event_from_alert(exp_alert)
 		
-		# Assertions
-		assert result.is_active is False
-		assert result.actual_end_date is not None
-		assert existing_event.nws_alert_id in result.previous_ids
+		# Assertions - CAN/EXP are now handled by check_completed_events, so this returns None
+		assert result is None
+		# Should not update event (handled by check_completed_events instead)
+		mock_state.update_event.assert_not_called()
 	
 	@patch('app.services.event_service.state')
 	def test_update_event_merges_locations(self, mock_state, existing_event):
@@ -656,8 +650,8 @@ class TestUpdateEventFromAlert:
 		# Execute
 		result = EventService.update_event_from_alert(can_alert)
 		
-		# Assertions - should be treated as CAN
-		assert result.is_active is False
+		# Assertions - CAN/EXP are now handled by check_completed_events, so this returns None
+		assert result is None
 	
 	@patch('app.services.event_service.state')
 	def test_update_event_with_missing_expected_end(self, mock_state, existing_event):
@@ -697,3 +691,1309 @@ class TestUpdateEventFromAlert:
 		if update_alert.message_type in ["CAN", "EXP"]:
 			# This would be tested in a separate test, but here we're testing CON
 			pass
+
+
+class TestExtractPropertiesFromAlert:
+	"""Test cases for EventService._extract_properties_from_alert."""
+	
+	def test_extract_properties_from_features_array(self):
+		"""Test extracting properties from GeoJSON FeatureCollection format."""
+		alert_data = {
+			"features": [
+				{
+					"properties": {
+						"id": "test-alert-1",
+						"headline": "Test Alert"
+					}
+				}
+			]
+		}
+		
+		result = EventService._extract_properties_from_alert(alert_data)
+		
+		assert result is not None
+		assert result["id"] == "test-alert-1"
+		assert result["headline"] == "Test Alert"
+	
+	def test_extract_properties_from_direct_properties(self):
+		"""Test extracting properties from direct properties format."""
+		alert_data = {
+			"properties": {
+				"id": "test-alert-2",
+				"headline": "Test Alert 2"
+			}
+		}
+		
+		result = EventService._extract_properties_from_alert(alert_data)
+		
+		assert result is not None
+		assert result["id"] == "test-alert-2"
+		assert result["headline"] == "Test Alert 2"
+	
+	def test_extract_properties_empty_features_array(self):
+		"""Test handling empty features array."""
+		alert_data = {
+			"features": []
+		}
+		
+		result = EventService._extract_properties_from_alert(alert_data, "test-id")
+		
+		assert result is None
+	
+	def test_extract_properties_missing_properties_in_feature(self):
+		"""Test handling feature without properties."""
+		alert_data = {
+			"features": [
+				{
+					"geometry": {}
+				}
+			]
+		}
+		
+		result = EventService._extract_properties_from_alert(alert_data, "test-id")
+		
+		assert result is None
+	
+	def test_extract_properties_no_features_or_properties(self):
+		"""Test handling alert data with neither features nor properties."""
+		alert_data = {
+			"type": "FeatureCollection"
+		}
+		
+		result = EventService._extract_properties_from_alert(alert_data, "test-id")
+		
+		assert result is None
+	
+	def test_extract_properties_empty_properties(self):
+		"""Test handling empty properties dictionary."""
+		alert_data = {
+			"properties": {}
+		}
+		
+		result = EventService._extract_properties_from_alert(alert_data)
+		
+		assert result is None
+
+
+class TestGetMostRecentAlert:
+	"""Test cases for EventService._get_most_recent_alert."""
+	
+	@pytest.mark.asyncio
+	async def test_get_most_recent_alert_no_replaced_by(self):
+		"""Test getting alert when there's no replacedBy property."""
+		client = AsyncMock()
+		alert_data = {
+			"features": [
+				{
+					"properties": {
+						"id": "alert-1",
+						"replacedBy": None
+					}
+				}
+			]
+		}
+		client.get_alert_by_id = AsyncMock(return_value=alert_data)
+		
+		result = await EventService._get_most_recent_alert(client, "alert-1")
+		
+		assert result == alert_data
+		client.get_alert_by_id.assert_called_once_with("alert-1")
+	
+	@pytest.mark.asyncio
+	async def test_get_most_recent_alert_follows_replaced_by(self):
+		"""Test following replacedBy link to get most recent alert."""
+		client = AsyncMock()
+		
+		# First alert with replacedBy
+		alert_1 = {
+			"features": [
+				{
+					"properties": {
+						"id": "alert-1",
+						"replacedBy": "https://api.weather.gov/alerts/alert-2"
+					}
+				}
+			]
+		}
+		
+		# Second alert (most recent, no replacedBy)
+		alert_2 = {
+			"features": [
+				{
+					"properties": {
+						"id": "alert-2",
+						"replacedBy": None
+					}
+				}
+			]
+		}
+		
+		client.get_alert_by_id = AsyncMock(side_effect=[alert_1, alert_2])
+		
+		result = await EventService._get_most_recent_alert(client, "alert-1")
+		
+		assert result == alert_2
+		assert client.get_alert_by_id.call_count == 2
+		client.get_alert_by_id.assert_any_call("alert-1")
+		client.get_alert_by_id.assert_any_call("alert-2")
+	
+	@pytest.mark.asyncio
+	async def test_get_most_recent_alert_multiple_replaced_by(self):
+		"""Test following multiple replacedBy links."""
+		client = AsyncMock()
+		
+		alert_1 = {
+			"features": [{"properties": {"id": "alert-1", "replacedBy": "https://api.weather.gov/alerts/alert-2"}}]
+		}
+		alert_2 = {
+			"features": [{"properties": {"id": "alert-2", "replacedBy": "https://api.weather.gov/alerts/alert-3"}}]
+		}
+		alert_3 = {
+			"features": [{"properties": {"id": "alert-3", "replacedBy": None}}]
+		}
+		
+		client.get_alert_by_id = AsyncMock(side_effect=[alert_1, alert_2, alert_3])
+		
+		result = await EventService._get_most_recent_alert(client, "alert-1")
+		
+		assert result == alert_3
+		assert client.get_alert_by_id.call_count == 3
+	
+	@pytest.mark.asyncio
+	async def test_get_most_recent_alert_handles_url_with_query_params(self):
+		"""Test handling replacedBy URL with query parameters."""
+		client = AsyncMock()
+		
+		alert_1 = {
+			"features": [{"properties": {"id": "alert-1", "replacedBy": "https://api.weather.gov/alerts/alert-2?param=value"}}]
+		}
+		alert_2 = {
+			"features": [{"properties": {"id": "alert-2", "replacedBy": None}}]
+		}
+		
+		client.get_alert_by_id = AsyncMock(side_effect=[alert_1, alert_2])
+		
+		result = await EventService._get_most_recent_alert(client, "alert-1")
+		
+		assert result == alert_2
+		client.get_alert_by_id.assert_any_call("alert-2")
+	
+	@pytest.mark.asyncio
+	async def test_get_most_recent_alert_max_iterations(self):
+		"""Test that max iterations prevents infinite loops."""
+		client = AsyncMock()
+		
+		# Create a chain that exceeds max iterations
+		alert_with_replaced_by = {
+			"features": [{"properties": {"id": "alert-1", "replacedBy": "https://api.weather.gov/alerts/alert-2"}}]
+		}
+		
+		client.get_alert_by_id = AsyncMock(return_value=alert_with_replaced_by)
+		
+		result = await EventService._get_most_recent_alert(client, "alert-1")
+		
+		# Should return the last alert after max iterations
+		assert result == alert_with_replaced_by
+		assert client.get_alert_by_id.call_count == 10
+	
+	@pytest.mark.asyncio
+	async def test_get_most_recent_alert_handles_exception(self):
+		"""Test handling exceptions when fetching alerts."""
+		client = AsyncMock()
+		client.get_alert_by_id = AsyncMock(side_effect=Exception("API Error"))
+		
+		result = await EventService._get_most_recent_alert(client, "alert-1")
+		
+		assert result is None
+	
+	@pytest.mark.asyncio
+	async def test_get_most_recent_alert_unexpected_replaced_by_format(self):
+		"""Test handling unexpected replacedBy format."""
+		client = AsyncMock()
+		
+		alert_data = {
+			"features": [
+				{
+					"properties": {
+						"id": "alert-1",
+						"replacedBy": "invalid-format"
+					}
+				}
+			]
+		}
+		
+		client.get_alert_by_id = AsyncMock(return_value=alert_data)
+		
+		result = await EventService._get_most_recent_alert(client, "alert-1")
+		
+		# Should return the alert data even with invalid replacedBy format
+		assert result == alert_data
+
+
+class TestExtractActualEndTime:
+	"""Test cases for EventService._extract_actual_end_time."""
+	
+	def test_extract_actual_end_time_from_event_ending_time(self):
+		"""Test extracting end time from eventEndingTime parameter."""
+		alert_data = {
+			"features": [
+				{
+					"properties": {
+						"parameters": {
+							"eventEndingTime": ["2024-01-15T12:00:00-06:00"]
+						}
+					}
+				}
+			]
+		}
+		
+		result = EventService._extract_actual_end_time(alert_data)
+		
+		assert result is not None
+		assert result.year == 2024
+		assert result.month == 1
+		assert result.day == 15
+	
+	def test_extract_actual_end_time_fallback_to_ends(self):
+		"""Test fallback to ends property when eventEndingTime is missing."""
+		alert_data = {
+			"features": [
+				{
+					"properties": {
+						"ends": "2024-01-15T11:00:00-06:00"
+					}
+				}
+			]
+		}
+		
+		result = EventService._extract_actual_end_time(alert_data)
+		
+		assert result is not None
+		assert result.year == 2024
+	
+	def test_extract_actual_end_time_fallback_to_expires(self):
+		"""Test fallback to expires property when eventEndingTime and ends are missing."""
+		alert_data = {
+			"features": [
+				{
+					"properties": {
+						"expires": "2024-01-15T13:00:00-06:00"
+					}
+				}
+			]
+		}
+		
+		result = EventService._extract_actual_end_time(alert_data)
+		
+		assert result is not None
+		assert result.year == 2024
+	
+	def test_extract_actual_end_time_fallback_to_current_time(self):
+		"""Test fallback to current time when all other options are missing."""
+		alert_data = {
+			"features": [
+				{
+					"properties": {}
+				}
+			]
+		}
+		
+		before = datetime.now(timezone.utc)
+		result = EventService._extract_actual_end_time(alert_data)
+		after = datetime.now(timezone.utc)
+		
+		assert result is not None
+		assert before <= result <= after
+	
+	def test_extract_actual_end_time_empty_event_ending_time_list(self):
+		"""Test handling empty eventEndingTime list."""
+		alert_data = {
+			"features": [
+				{
+					"properties": {
+						"parameters": {
+							"eventEndingTime": []
+						},
+						"ends": "2024-01-15T11:00:00-06:00"
+					}
+				}
+			]
+		}
+		
+		result = EventService._extract_actual_end_time(alert_data)
+		
+		# Should fallback to ends
+		assert result is not None
+		assert result.year == 2024
+	
+	def test_extract_actual_end_time_invalid_properties(self):
+		"""Test handling alert data with invalid properties structure."""
+		alert_data = {
+			"invalid": "structure"
+		}
+		
+		before = datetime.now(timezone.utc)
+		result = EventService._extract_actual_end_time(alert_data)
+		after = datetime.now(timezone.utc)
+		
+		# Should fallback to current time
+		assert result is not None
+		assert before <= result <= after
+
+
+class TestCheckCompletedEvents:
+	"""Test cases for EventService.check_completed_events."""
+	
+	@pytest.fixture
+	def active_event_past_end_date(self):
+		"""Create an active event past its expected end date."""
+		return Event(
+			event_key="KFWD.TO.W.0015.2024",
+			nws_alert_id="alert-123",
+			episode_key=None,
+			event_type="TOR",
+			hr_event_type="Tornado Warning",
+			locations=[],
+			start_date=datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
+			expected_end_date=datetime(2024, 1, 15, 11, 0, 0, tzinfo=timezone.utc),  # Past
+			actual_end_date=None,
+			updated_at=datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
+			description="Test",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/",
+			previous_ids=[]
+		)
+	
+	@pytest.fixture
+	def active_event_future_end_date(self):
+		"""Create an active event with future expected end date."""
+		future_date = datetime.now(timezone.utc) + timedelta(hours=1)
+		return Event(
+			event_key="KFWD.TO.W.0016.2024",
+			nws_alert_id="alert-456",
+			episode_key=None,
+			event_type="TOR",
+			hr_event_type="Tornado Warning",
+			locations=[],
+			start_date=datetime.now(timezone.utc),
+			expected_end_date=future_date,
+			actual_end_date=None,
+			updated_at=datetime.now(timezone.utc),
+			description="Test",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0016.240115T1000Z-240115T1100Z/",
+			previous_ids=[]
+		)
+	
+	@patch('app.services.event_service.state')
+	@patch('app.services.event_service.asyncio.run')
+	def test_check_completed_events_no_active_events(self, mock_asyncio_run, mock_state):
+		"""Test when there are no active events."""
+		type(mock_state).active_events = PropertyMock(return_value=[])
+		
+		EventService.check_completed_events()
+		
+		mock_asyncio_run.assert_not_called()
+	
+	@patch('app.services.event_service.state')
+	@patch('app.services.event_service.asyncio.run')
+	def test_check_completed_events_no_events_past_end_date(self, mock_asyncio_run, mock_state, active_event_future_end_date):
+		"""Test when no events are past their expected end date."""
+		type(mock_state).active_events = PropertyMock(return_value=[active_event_future_end_date])
+		
+		EventService.check_completed_events()
+		
+		mock_asyncio_run.assert_not_called()
+	
+	@patch('app.services.event_service.state')
+	@patch('app.services.event_service.asyncio.run')
+	def test_check_completed_events_filters_by_end_date(self, mock_asyncio_run, mock_state, active_event_past_end_date, active_event_future_end_date):
+		"""Test that only events past expected end date are checked."""
+		type(mock_state).active_events = PropertyMock(return_value=[active_event_past_end_date, active_event_future_end_date])
+		
+		EventService.check_completed_events()
+		
+		# Should call asyncio.run
+		mock_asyncio_run.assert_called_once()
+		# Verify it was called (the coroutine will be passed to asyncio.run)
+		assert mock_asyncio_run.called
+	
+	@patch('app.services.event_service.state')
+	@patch('app.services.event_service.NWSClient')
+	@patch('app.services.event_service.vtec.get_message_type')
+	@patch('app.services.event_service.EventService._get_most_recent_alert')
+	@patch('app.services.event_service.EventService._extract_actual_end_time')
+	@pytest.mark.asyncio
+	async def test_check_completed_events_can_message_type(self, mock_extract_time, mock_get_alert, mock_get_message_type, mock_client_class, mock_state, active_event_past_end_date):
+		"""Test that events with CAN message type are marked inactive."""
+		mock_state.update_event = Mock()
+		
+		# Mock alert data
+		alert_data = {
+			"features": [{"properties": {"id": "alert-123"}}]
+		}
+		mock_get_alert.return_value = alert_data
+		mock_get_message_type.return_value = "CAN"
+		mock_extract_time.return_value = datetime(2024, 1, 15, 11, 0, 0, tzinfo=timezone.utc)
+		
+		mock_client = AsyncMock()
+		mock_client.close = AsyncMock()
+		mock_client_class.return_value = mock_client
+		
+		await EventService._async_check_completed_events([active_event_past_end_date])
+		
+		# Should update event to inactive
+		mock_state.update_event.assert_called_once()
+		updated_event = mock_state.update_event.call_args[0][0]
+		assert updated_event.is_active is False
+		assert updated_event.actual_end_date is not None
+	
+	@patch('app.services.event_service.state')
+	@patch('app.services.event_service.NWSClient')
+	@patch('app.services.event_service.vtec.get_message_type')
+	@patch('app.services.event_service.EventService._get_most_recent_alert')
+	@patch('app.services.event_service.EventService._extract_actual_end_time')
+	@patch('app.services.event_service.settings')
+	@pytest.mark.asyncio
+	async def test_check_completed_events_timeout_threshold(self, mock_settings, mock_extract_time, mock_get_alert, mock_get_message_type, mock_client_class, mock_state):
+		"""Test that events past timeout threshold are marked inactive."""
+		mock_settings.event_completion_timeout_hours = 4
+		
+		# Create event past expected end date by more than 4 hours
+		past_date = datetime.now(timezone.utc) - timedelta(hours=5)
+		event = Event(
+			event_key="KFWD.TO.W.0017.2024",
+			nws_alert_id="alert-789",
+			episode_key=None,
+			event_type="TOR",
+			hr_event_type="Tornado Warning",
+			locations=[],
+			start_date=past_date - timedelta(hours=1),
+			expected_end_date=past_date,
+			actual_end_date=None,
+			updated_at=past_date,
+			description="Test",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0017.240115T1000Z-240115T1100Z/",
+			previous_ids=[]
+		)
+		
+		mock_state.update_event = Mock()
+		
+		alert_data = {
+			"features": [{"properties": {"id": "alert-789"}}]
+		}
+		mock_get_alert.return_value = alert_data
+		mock_get_message_type.return_value = "CON"  # Not CAN or EXP
+		mock_extract_time.return_value = datetime.now(timezone.utc)
+		
+		mock_client = AsyncMock()
+		mock_client.close = AsyncMock()
+		mock_client_class.return_value = mock_client
+		
+		await EventService._async_check_completed_events([event])
+		
+		# Should update event to inactive due to timeout
+		mock_state.update_event.assert_called_once()
+		updated_event = mock_state.update_event.call_args[0][0]
+		assert updated_event.is_active is False
+	
+	@patch('app.services.event_service.state')
+	@patch('app.services.event_service.NWSClient')
+	@patch('app.services.event_service.vtec.get_message_type')
+	@patch('app.services.event_service.EventService._get_most_recent_alert')
+	@patch('app.services.event_service.settings')
+	@pytest.mark.asyncio
+	async def test_check_completed_events_not_past_timeout(self, mock_settings, mock_get_alert, mock_get_message_type, mock_client_class, mock_state):
+		"""Test that events not past timeout threshold are not marked inactive."""
+		mock_settings.event_completion_timeout_hours = 4
+		
+		# Create event past expected end date but not past timeout
+		past_date = datetime.now(timezone.utc) - timedelta(hours=2)
+		event = Event(
+			event_key="KFWD.TO.W.0018.2024",
+			nws_alert_id="alert-999",
+			episode_key=None,
+			event_type="TOR",
+			hr_event_type="Tornado Warning",
+			locations=[],
+			start_date=past_date - timedelta(hours=1),
+			expected_end_date=past_date,
+			actual_end_date=None,
+			updated_at=past_date,
+			description="Test",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0018.240115T1000Z-240115T1100Z/",
+			previous_ids=[]
+		)
+		
+		mock_state.update_event = Mock()
+		
+		alert_data = {
+			"features": [{"properties": {"id": "alert-999"}}]
+		}
+		mock_get_alert.return_value = alert_data
+		mock_get_message_type.return_value = "CON"  # Not CAN or EXP
+		
+		mock_client = AsyncMock()
+		mock_client.close = AsyncMock()
+		mock_client_class.return_value = mock_client
+		
+		await EventService._async_check_completed_events([event])
+		
+		# Should NOT update event (not past timeout)
+		mock_state.update_event.assert_not_called()
+	
+	@patch('app.services.event_service.state')
+	@patch('app.services.event_service.NWSClient')
+	@patch('app.services.event_service.EventService._get_most_recent_alert')
+	@pytest.mark.asyncio
+	async def test_check_completed_events_handles_missing_alert(self, mock_get_alert, mock_client_class, mock_state, active_event_past_end_date):
+		"""Test handling when alert cannot be retrieved."""
+		mock_state.update_event = Mock()
+		
+		mock_get_alert.return_value = None  # Alert not found
+		
+		mock_client = AsyncMock()
+		mock_client.close = AsyncMock()
+		mock_client_class.return_value = mock_client
+		
+		await EventService._async_check_completed_events([active_event_past_end_date])
+		
+		# Should not update event
+		mock_state.update_event.assert_not_called()
+	
+	@patch('app.services.event_service.state')
+	@patch('app.services.event_service.NWSClient')
+	@patch('app.services.event_service.EventService._get_most_recent_alert')
+	@pytest.mark.asyncio
+	async def test_check_completed_events_handles_exception(self, mock_get_alert, mock_client_class, mock_state, active_event_past_end_date):
+		"""Test handling exceptions during processing."""
+		mock_state.update_event = Mock()
+		
+		mock_get_alert.side_effect = Exception("API Error")
+		
+		mock_client = AsyncMock()
+		mock_client.close = AsyncMock()
+		mock_client_class.return_value = mock_client
+		
+		# Should not raise exception, just log and continue
+		await EventService._async_check_completed_events([active_event_past_end_date])
+		
+		# Should not update event
+		mock_state.update_event.assert_not_called()
+
+
+class TestStateActiveEvents:
+	"""Test cases for State.active_events property."""
+	
+	@patch('app.state.quantagent_redis')
+	def test_active_events_filters_by_is_active(self, mock_redis):
+		"""Test that active_events only returns events where is_active=True."""
+		from app.state import State
+		
+		# Create mock events
+		active_event = Event(
+			event_key="active-event",
+			nws_alert_id="alert-1",
+			event_type="TOR",
+			start_date=datetime.now(timezone.utc),
+			description="Active",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		inactive_event = Event(
+			event_key="inactive-event",
+			nws_alert_id="alert-2",
+			event_type="TOR",
+			start_date=datetime.now(timezone.utc),
+			description="Inactive",
+			is_active=False,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		# Mock Redis to return both events
+		mock_redis.get_all_keys.return_value = ["event:active-event", "event:inactive-event"]
+		mock_redis.read.side_effect = [
+			active_event.to_dict(),
+			inactive_event.to_dict()
+		]
+		
+		state = State()
+		result = state.active_events
+		
+		# Should only return active event
+		assert len(result) == 1
+		assert result[0].event_key == "active-event"
+		assert result[0].is_active is True
+	
+	@patch('app.state.quantagent_redis')
+	def test_active_events_returns_empty_list_when_no_active_events(self, mock_redis):
+		"""Test that active_events returns empty list when no active events exist."""
+		from app.state import State
+		
+		inactive_event = Event(
+			event_key="inactive-event",
+			nws_alert_id="alert-1",
+			event_type="TOR",
+			start_date=datetime.now(timezone.utc),
+			description="Inactive",
+			is_active=False,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		mock_redis.get_all_keys.return_value = ["event:inactive-event"]
+		mock_redis.read.return_value = inactive_event.to_dict()
+		
+		state = State()
+		result = state.active_events
+		
+		assert len(result) == 0
+	
+	@patch('app.state.quantagent_redis')
+	def test_active_events_handles_mixed_active_inactive(self, mock_redis):
+		"""Test that active_events correctly filters mixed active/inactive events."""
+		from app.state import State
+		
+		active_event_1 = Event(
+			event_key="active-1",
+			nws_alert_id="alert-1",
+			event_type="TOR",
+			start_date=datetime.now(timezone.utc),
+			description="Active 1",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		active_event_2 = Event(
+			event_key="active-2",
+			nws_alert_id="alert-2",
+			event_type="TOR",
+			start_date=datetime.now(timezone.utc),
+			description="Active 2",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		inactive_event = Event(
+			event_key="inactive",
+			nws_alert_id="alert-3",
+			event_type="TOR",
+			start_date=datetime.now(timezone.utc),
+			description="Inactive",
+			is_active=False,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		mock_redis.get_all_keys.return_value = ["event:active-1", "event:inactive", "event:active-2"]
+		mock_redis.read.side_effect = [
+			active_event_1.to_dict(),
+			inactive_event.to_dict(),
+			active_event_2.to_dict()
+		]
+		
+		state = State()
+		result = state.active_events
+		
+		# Should return only the 2 active events
+		assert len(result) == 2
+		event_keys = {event.event_key for event in result}
+		assert "active-1" in event_keys
+		assert "active-2" in event_keys
+		assert "inactive" not in event_keys
+
+
+class TestGetEvents:
+	"""Test cases for EventService.get_events filtering functionality."""
+	
+	@patch('app.services.event_service.state')
+	def test_get_events_default_hour_offset(self, mock_state):
+		"""Test get_events with default 72 hour offset."""
+		now = datetime.now(timezone.utc)
+		time_point = now - timedelta(hours=72)
+		
+		# Event within range
+		event_in_range = Event(
+			event_key="event-1",
+			nws_alert_id="alert-1",
+			event_type="TOR",
+			start_date=time_point - timedelta(hours=10),
+			actual_end_date=time_point + timedelta(hours=10),
+			description="Event in range",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		# Event before range
+		event_before = Event(
+			event_key="event-2",
+			nws_alert_id="alert-2",
+			event_type="TOR",
+			start_date=time_point - timedelta(hours=100),
+			actual_end_date=time_point - timedelta(hours=50),
+			description="Event before range",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		# Event after range
+		event_after = Event(
+			event_key="event-3",
+			nws_alert_id="alert-3",
+			event_type="TOR",
+			start_date=time_point + timedelta(hours=50),
+			actual_end_date=time_point + timedelta(hours=100),
+			description="Event after range",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		mock_state.events = [event_in_range, event_before, event_after]
+		
+		result = EventService.get_events()
+		
+		# Should only return event_in_range
+		assert len(result) == 1
+		assert result[0].event_key == "event-1"
+	
+	@patch('app.services.event_service.state')
+	def test_get_events_custom_hour_offset(self, mock_state):
+		"""Test get_events with custom hour offset."""
+		now = datetime.now(timezone.utc)
+		time_point_24h = now - timedelta(hours=24)
+		time_point_48h = now - timedelta(hours=48)
+		
+		# Event within 24h range
+		event_24h = Event(
+			event_key="event-24h",
+			nws_alert_id="alert-1",
+			event_type="TOR",
+			start_date=time_point_24h - timedelta(hours=5),
+			actual_end_date=time_point_24h + timedelta(hours=5),
+			description="Event in 24h range",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		# Event within 48h range but not 24h
+		event_48h = Event(
+			event_key="event-48h",
+			nws_alert_id="alert-2",
+			event_type="TOR",
+			start_date=time_point_48h - timedelta(hours=5),
+			actual_end_date=time_point_48h + timedelta(hours=5),
+			description="Event in 48h range",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		mock_state.events = [event_24h, event_48h]
+		
+		result = EventService.get_events(hour_offset=24)
+		
+		# Should only return event_24h
+		assert len(result) == 1
+		assert result[0].event_key == "event-24h"
+	
+	@patch('app.services.event_service.state')
+	def test_get_events_includes_events_with_null_actual_end_date_only(self, mock_state):
+		"""Test that events with null actual_end_date are always included (start_date is required)."""
+		now = datetime.now(timezone.utc)
+		time_point = now - timedelta(hours=72)
+		
+		# Event with null actual_end_date - should be included
+		event_with_null_end = Event(
+			event_key="event-null-end",
+			nws_alert_id="alert-1",
+			event_type="TOR",
+			start_date=time_point - timedelta(hours=100),
+			actual_end_date=None,
+			description="Event with null end",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		# Event outside range - should be excluded
+		event_normal = Event(
+			event_key="event-normal",
+			nws_alert_id="alert-2",
+			event_type="TOR",
+			start_date=time_point - timedelta(hours=100),
+			actual_end_date=time_point - timedelta(hours=50),
+			description="Event before range",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		mock_state.events = [event_with_null_end, event_normal]
+		
+		result = EventService.get_events(hour_offset=72)
+		
+		# Should include event_with_null_end even though it's outside range
+		assert len(result) == 1
+		assert result[0].event_key == "event-null-end"
+	
+	@patch('app.services.event_service.state')
+	def test_get_events_includes_events_with_null_actual_end_date(self, mock_state):
+		"""Test that events with null actual_end_date are always included."""
+		now = datetime.now(timezone.utc)
+		time_point = now - timedelta(hours=72)
+		
+		event_with_null_end = Event(
+			event_key="event-null-end",
+			nws_alert_id="alert-1",
+			event_type="TOR",
+			start_date=time_point - timedelta(hours=100),
+			actual_end_date=None,
+			description="Event with null end",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		event_normal = Event(
+			event_key="event-normal",
+			nws_alert_id="alert-2",
+			event_type="TOR",
+			start_date=time_point - timedelta(hours=100),
+			actual_end_date=time_point - timedelta(hours=50),
+			description="Event before range",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		mock_state.events = [event_with_null_end, event_normal]
+		
+		result = EventService.get_events(hour_offset=72)
+		
+		# Should include event_with_null_end even though it's outside range
+		assert len(result) == 1
+		assert result[0].event_key == "event-null-end"
+	
+	@patch('app.services.event_service.state')
+	def test_get_events_includes_events_with_null_actual_end_date(self, mock_state):
+		"""Test that events with null actual_end_date are always included."""
+		now = datetime.now(timezone.utc)
+		time_point = now - timedelta(hours=72)
+		
+		# Event with null actual_end_date - should be included
+		event_with_null_end = Event(
+			event_key="event-null-end",
+			nws_alert_id="alert-1",
+			event_type="TOR",
+			start_date=datetime.now(timezone.utc) - timedelta(hours=100),
+			actual_end_date=None,
+			description="Event with null end",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		mock_state.events = [event_with_null_end]
+		
+		result = EventService.get_events(hour_offset=72)
+		
+		# Should include event_with_null_end
+		assert len(result) == 1
+		assert result[0].event_key == "event-null-end"
+	
+	@patch('app.services.event_service.state')
+	def test_get_events_with_zero_hour_offset_returns_all(self, mock_state):
+		"""Test that hour_offset of 0 or less returns all events."""
+		event1 = Event(
+			event_key="event-1",
+			nws_alert_id="alert-1",
+			event_type="TOR",
+			start_date=datetime.now(timezone.utc) - timedelta(hours=100),
+			actual_end_date=datetime.now(timezone.utc) - timedelta(hours=50),
+			description="Event 1",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		event2 = Event(
+			event_key="event-2",
+			nws_alert_id="alert-2",
+			event_type="TOR",
+			start_date=datetime.now(timezone.utc) - timedelta(hours=10),
+			actual_end_date=datetime.now(timezone.utc) + timedelta(hours=10),
+			description="Event 2",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		mock_state.events = [event1, event2]
+		
+		result = EventService.get_events(hour_offset=0)
+		
+		# Should return all events
+		assert len(result) == 2
+	
+	@patch('app.services.event_service.state')
+	def test_get_events_boundary_conditions(self, mock_state):
+		"""Test get_events with boundary conditions (time_point within range)."""
+		# Use a fixed time point to avoid timing issues
+		# We'll create events that clearly span the time_point
+		now = datetime.now(timezone.utc)
+		time_point = now - timedelta(hours=72)
+		
+		# Event where time_point is clearly within range (start before, end after)
+		event_in_range = Event(
+			event_key="event-in-range",
+			nws_alert_id="alert-1",
+			event_type="TOR",
+			start_date=time_point - timedelta(hours=5),
+			actual_end_date=time_point + timedelta(hours=5),
+			description="Event in range",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		# Event where time_point is exactly at start_date (should be included)
+		# Use a small buffer to account for timing differences
+		event_at_start = Event(
+			event_key="event-at-start",
+			nws_alert_id="alert-2",
+			event_type="TOR",
+			start_date=time_point - timedelta(seconds=1),
+			actual_end_date=time_point + timedelta(hours=10),
+			description="Event at start",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		# Event where time_point is exactly at actual_end_date (should be included)
+		event_at_end = Event(
+			event_key="event-at-end",
+			nws_alert_id="alert-3",
+			event_type="TOR",
+			start_date=time_point - timedelta(hours=10),
+			actual_end_date=time_point + timedelta(seconds=1),
+			description="Event at end",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		# Event where time_point is just before start_date (should be excluded)
+		event_before_start = Event(
+			event_key="event-before-start",
+			nws_alert_id="alert-4",
+			event_type="TOR",
+			start_date=time_point + timedelta(minutes=5),
+			actual_end_date=time_point + timedelta(hours=10),
+			description="Event before start",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		# Event where time_point is just after actual_end_date (should be excluded)
+		event_after_end = Event(
+			event_key="event-after-end",
+			nws_alert_id="alert-5",
+			event_type="TOR",
+			start_date=time_point - timedelta(hours=10),
+			actual_end_date=time_point - timedelta(minutes=5),
+			description="Event after end",
+			is_active=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		mock_state.events = [event_in_range, event_at_start, event_at_end, event_before_start, event_after_end]
+		
+		result = EventService.get_events(hour_offset=72)
+		
+		# Should include events that span time_point (in range, at start, at end)
+		# Should exclude events before start or after end
+		assert len(result) >= 3  # At least the three that should be included
+		event_keys = {event.event_key for event in result}
+		assert "event-in-range" in event_keys
+		assert "event-before-start" not in event_keys
+		assert "event-after-end" not in event_keys
+
+
+class TestConfirmedFunctionality:
+	"""Test cases for confirmed field functionality."""
+	
+	@patch('app.services.event_service.state')
+	def test_create_event_with_observed_certainty_sets_confirmed_true(self, mock_state):
+		"""Test that creating an event with certainty='Observed' sets confirmed=True."""
+		mock_state.event_exists.return_value = False
+		mock_state.add_event = Mock()
+		
+		alert = FilteredNWSAlert(
+			alert_id="test-alert-1",
+			key="KFWD.TO.W.0015.2024",
+			event_type="TOR",
+			message_type="NEW",
+			is_watch=False,
+			is_warning=True,
+			severity="Extreme",
+			urgency="Immediate",
+			certainty="Observed",
+			effective="2024-01-15T10:00:00-06:00",
+			expires="2024-01-15T11:00:00-06:00",
+			expected_end="2024-01-15T11:00:00-06:00",
+			headline="Test",
+			description="Test",
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/",
+			affected_zones_ugc_endpoints=[],
+			affected_zones_raw_ugc_codes=[],
+			referenced_alerts=[],
+			locations=[]
+		)
+		
+		result = EventService.create_event_from_alert(alert)
+		
+		assert result.confirmed is True
+	
+	@patch('app.services.event_service.state')
+	def test_create_event_with_non_observed_certainty_sets_confirmed_false(self, mock_state):
+		"""Test that creating an event with certainty != 'Observed' sets confirmed=False."""
+		mock_state.event_exists.return_value = False
+		mock_state.add_event = Mock()
+		
+		alert = FilteredNWSAlert(
+			alert_id="test-alert-1",
+			key="KFWD.TO.W.0015.2024",
+			event_type="TOR",
+			message_type="NEW",
+			is_watch=False,
+			is_warning=True,
+			severity="Extreme",
+			urgency="Immediate",
+			certainty="Likely",
+			effective="2024-01-15T10:00:00-06:00",
+			expires="2024-01-15T11:00:00-06:00",
+			expected_end="2024-01-15T11:00:00-06:00",
+			headline="Test",
+			description="Test",
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/",
+			affected_zones_ugc_endpoints=[],
+			affected_zones_raw_ugc_codes=[],
+			referenced_alerts=[],
+			locations=[]
+		)
+		
+		result = EventService.create_event_from_alert(alert)
+		
+		assert result.confirmed is False
+	
+	@patch('app.services.event_service.state')
+	def test_create_event_with_case_insensitive_observed_certainty(self, mock_state):
+		"""Test that certainty check is case-insensitive."""
+		mock_state.event_exists.return_value = False
+		mock_state.add_event = Mock()
+		
+		# Test lowercase
+		alert_lower = FilteredNWSAlert(
+			alert_id="test-alert-1",
+			key="KFWD.TO.W.0015.2024",
+			event_type="TOR",
+			message_type="NEW",
+			is_watch=False,
+			is_warning=True,
+			severity="Extreme",
+			urgency="Immediate",
+			certainty="observed",
+			effective="2024-01-15T10:00:00-06:00",
+			expires="2024-01-15T11:00:00-06:00",
+			expected_end="2024-01-15T11:00:00-06:00",
+			headline="Test",
+			description="Test",
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/",
+			affected_zones_ugc_endpoints=[],
+			affected_zones_raw_ugc_codes=[],
+			referenced_alerts=[],
+			locations=[]
+		)
+		
+		result = EventService.create_event_from_alert(alert_lower)
+		assert result.confirmed is True
+		
+		# Test mixed case
+		mock_state.event_exists.return_value = False
+		alert_mixed = FilteredNWSAlert(
+			alert_id="test-alert-2",
+			key="KFWD.TO.W.0016.2024",
+			event_type="TOR",
+			message_type="NEW",
+			is_watch=False,
+			is_warning=True,
+			severity="Extreme",
+			urgency="Immediate",
+			certainty="OBSERVED",
+			effective="2024-01-15T10:00:00-06:00",
+			expires="2024-01-15T11:00:00-06:00",
+			expected_end="2024-01-15T11:00:00-06:00",
+			headline="Test",
+			description="Test",
+			raw_vtec="/O.NEW.KFWD.TO.W.0016.240115T1000Z-240115T1100Z/",
+			affected_zones_ugc_endpoints=[],
+			affected_zones_raw_ugc_codes=[],
+			referenced_alerts=[],
+			locations=[]
+		)
+		
+		result = EventService.create_event_from_alert(alert_mixed)
+		assert result.confirmed is True
+	
+	@patch('app.services.event_service.state')
+	def test_update_event_with_observed_certainty_sets_confirmed_true(self, mock_state):
+		"""Test that updating an event with certainty='Observed' sets confirmed=True."""
+		existing_event = Event(
+			event_key="KFWD.TO.W.0015.2024",
+			nws_alert_id="alert-1",
+			event_type="TOR",
+			start_date=datetime.now(timezone.utc),
+			description="Existing event",
+			is_active=True,
+			confirmed=False,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		update_alert = FilteredNWSAlert(
+			alert_id="alert-2",
+			key="KFWD.TO.W.0015.2024",
+			event_type="TOR",
+			message_type="CON",
+			is_watch=False,
+			is_warning=True,
+			severity="Extreme",
+			urgency="Immediate",
+			certainty="Observed",
+			effective="2024-01-15T10:00:00-06:00",
+			expires="2024-01-15T11:00:00-06:00",
+			expected_end="2024-01-15T11:00:00-06:00",
+			headline="Updated",
+			description="Updated description",
+			raw_vtec="/O.CON.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/",
+			affected_zones_ugc_endpoints=[],
+			affected_zones_raw_ugc_codes=[],
+			referenced_alerts=[],
+			locations=[]
+		)
+		
+		mock_state.get_event.return_value = existing_event
+		mock_state.update_event = Mock()
+		
+		result = EventService.update_event_from_alert(update_alert)
+		
+		assert result.confirmed is True
+	
+	@patch('app.services.event_service.state')
+	def test_update_event_preserves_confirmed_if_already_true(self, mock_state):
+		"""Test that updating an event preserves confirmed=True if already set."""
+		existing_event = Event(
+			event_key="KFWD.TO.W.0015.2024",
+			nws_alert_id="alert-1",
+			event_type="TOR",
+			start_date=datetime.now(timezone.utc),
+			description="Existing event",
+			is_active=True,
+			confirmed=True,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		update_alert = FilteredNWSAlert(
+			alert_id="alert-2",
+			key="KFWD.TO.W.0015.2024",
+			event_type="TOR",
+			message_type="CON",
+			is_watch=False,
+			is_warning=True,
+			severity="Extreme",
+			urgency="Immediate",
+			certainty="Likely",  # Not observed
+			effective="2024-01-15T10:00:00-06:00",
+			expires="2024-01-15T11:00:00-06:00",
+			expected_end="2024-01-15T11:00:00-06:00",
+			headline="Updated",
+			description="Updated description",
+			raw_vtec="/O.CON.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/",
+			affected_zones_ugc_endpoints=[],
+			affected_zones_raw_ugc_codes=[],
+			referenced_alerts=[],
+			locations=[]
+		)
+		
+		mock_state.get_event.return_value = existing_event
+		mock_state.update_event = Mock()
+		
+		result = EventService.update_event_from_alert(update_alert)
+		
+		# Should preserve confirmed=True even though new alert is not observed
+		assert result.confirmed is True
+	
+	@patch('app.services.event_service.state')
+	def test_replace_event_with_observed_certainty_sets_confirmed_true(self, mock_state):
+		"""Test that replacing an event (COR/UPG) with certainty='Observed' sets confirmed=True."""
+		existing_event = Event(
+			event_key="KFWD.TO.W.0015.2024",
+			nws_alert_id="alert-1",
+			event_type="TOR",
+			start_date=datetime.now(timezone.utc),
+			description="Existing event",
+			is_active=True,
+			confirmed=False,
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
+		)
+		
+		cor_alert = FilteredNWSAlert(
+			alert_id="alert-2",
+			key="KFWD.TO.W.0015.2024",
+			event_type="TOR",
+			message_type="COR",
+			is_watch=False,
+			is_warning=True,
+			severity="Extreme",
+			urgency="Immediate",
+			certainty="Observed",
+			effective="2024-01-15T10:00:00-06:00",
+			expires="2024-01-15T11:00:00-06:00",
+			expected_end="2024-01-15T11:00:00-06:00",
+			headline="Corrected",
+			description="Corrected description",
+			raw_vtec="/O.COR.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/",
+			affected_zones_ugc_endpoints=[],
+			affected_zones_raw_ugc_codes=[],
+			referenced_alerts=[],
+			locations=[]
+		)
+		
+		mock_state.get_event.return_value = existing_event
+		mock_state.update_event = Mock()
+		
+		result = EventService.update_event_from_alert(cor_alert)
+		
+		assert result.confirmed is True
+	
+	@patch('app.services.event_service.state')
+	def test_create_event_with_empty_certainty_sets_confirmed_false(self, mock_state):
+		"""Test that creating an event with empty certainty string sets confirmed=False."""
+		mock_state.event_exists.return_value = False
+		mock_state.add_event = Mock()
+		
+		alert = FilteredNWSAlert(
+			alert_id="test-alert-1",
+			key="KFWD.TO.W.0015.2024",
+			event_type="TOR",
+			message_type="NEW",
+			is_watch=False,
+			is_warning=True,
+			severity="Extreme",
+			urgency="Immediate",
+			certainty="",  # Empty string
+			effective="2024-01-15T10:00:00-06:00",
+			expires="2024-01-15T11:00:00-06:00",
+			expected_end="2024-01-15T11:00:00-06:00",
+			headline="Test",
+			description="Test",
+			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/",
+			affected_zones_ugc_endpoints=[],
+			affected_zones_raw_ugc_codes=[],
+			referenced_alerts=[],
+			locations=[]
+		)
+		
+		result = EventService.create_event_from_alert(alert)
+		
+		assert result.confirmed is False

@@ -28,6 +28,12 @@ class Settings:
 	quantagent_api_port: int = int(os.getenv("QUANTAGENT_API_PORT", "8000"))
 
 	ugc_zone_base_url: str = os.getenv("UGC_ZONE_BASE_URL", "https://api.weather.gov/zones/county/")
+	
+	# Event completion checking configuration
+	event_completion_timeout_hours: int = int(os.getenv("EVENT_COMPLETION_TIMEOUT_HOURS", "4"))
+	
+	# NWS polling filter configuration
+	nws_polling_certainty: str = os.getenv("NWS_POLLING_CERTAINTY", "Observed,Likely")
 
 	@property
 	def quantagentic_api_url(self) -> str:

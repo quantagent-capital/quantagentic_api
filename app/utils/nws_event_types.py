@@ -32,7 +32,9 @@ NWS_WARNING_CODES: Dict[str, str] = {
 	"SQW": "Snow Squall Warning",
 	"UPW": "Heavy Freezing Spray Warning",
 	"FAW": "Areal Flood Warning",
-	"ECW": "Extreme Cold Warning"
+	"ECW": "Extreme Cold Warning",
+	"LEW": "Lake Effect Snow Warning",
+	"ISW": "Ice Storm Warning"
 }
 
 # Valid event type codes for watches (3-letter codes)

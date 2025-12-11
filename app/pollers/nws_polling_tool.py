@@ -46,7 +46,7 @@ class NWSConfirmedEventsPoller:
 					"status": "actual",
 					"severity": "Extreme,Severe",
 					"urgency": "Immediate,Expected",
-					"certainty": "Observed"
+					"certainty": settings.nws_polling_certainty
 				}
 
 				data = await client.get("/alerts/active", params=params, headers=headers)

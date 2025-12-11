@@ -52,7 +52,7 @@ class State:
 	def events(self) -> List[Event]:
 		"""
 		Getter for events.
-		Fetches all events from Redis with prefix 'event:' and filters by is_active=True.
+		Fetches all events from Redis with prefix 'event:'.
 		Usage: events = state.events
 		"""
 		# Get all keys matching the event pattern
@@ -77,6 +77,16 @@ class State:
 				continue
 		
 		return events
+
+	@property
+	def active_events(self) -> List[Event]:
+		"""
+		Getter for active events.
+		Fetches all events from Redis and filters by is_active=True.
+		Usage: active_events = state.active_events
+		"""
+		all_events = self.events
+		return [event for event in all_events if event.is_active is True]
 
 	def add_event(self, event: Event):
 		"""

@@ -1,5 +1,5 @@
-from fastapi import APIRouter, status
-from typing import List
+from fastapi import APIRouter, status, Query
+from typing import List, Dict, Optional
 from app.exceptions.base import ConflictError
 from app.schemas.event import Event
 from app.shared_models.nws_poller_models import FilteredNWSAlert
@@ -11,11 +11,19 @@ logger = logging.getLogger(__name__)
 
 @router.get("/", response_model=List[Event])
 @handle_service_exceptions
-async def get_all_events():
+async def get_events(hour_offset: Optional[int] = Query(default=72, description="Hours to look back from now for filtering events")):
 	"""
-	Get all events from state.
+	Get events from state, optionally filtered by hour_offset.
+	
+	Args:
+		hour_offset: Hours to look back from now. Default is 72 hours.
+			Events are included if the calculated time point (now - hour_offset) 
+			falls between start_date and actual_end_date, or if either date is null.
+	
+	Returns:
+		List of Event objects matching the filter criteria
 	"""
-	events = EventService.get_all_events()
+	events = EventService.get_events(hour_offset=hour_offset)
 	return events
 
 @router.post("/", response_model=Event, status_code=status.HTTP_201_CREATED)
@@ -61,4 +69,16 @@ async def has_episode(event_key: str):
 	Check if an event has an associated episode.
 	"""
 	return EventService.has_episode(event_key)
+
+@router.get("/stats/counts-by-type", response_model=Dict[str, int])
+@handle_service_exceptions
+async def get_active_event_counts_by_type():
+	"""
+	Get count of all active events grouped by event type.
+	
+	Returns:
+		Dictionary mapping event_type to count of active events
+		Example: {"Flood Warning": 5, "Tornado Warning": 2}
+	"""
+	return EventService.get_active_event_counts_by_type()
 
