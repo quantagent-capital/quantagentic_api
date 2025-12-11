@@ -1157,10 +1157,10 @@ class TestCheckCompletedEvents:
 	@pytest.mark.asyncio
 	async def test_check_completed_events_timeout_threshold(self, mock_settings, mock_extract_time, mock_get_alert, mock_get_message_type, mock_client_class, mock_state):
 		"""Test that events past timeout threshold are marked inactive."""
-		mock_settings.event_completion_timeout_hours = 4
+		mock_settings.event_completion_timeout_minutes = 20
 		
-		# Create event past expected end date by more than 4 hours
-		past_date = datetime.now(timezone.utc) - timedelta(hours=5)
+		# Create event past expected end date by more than 20 minutes
+		past_date = datetime.now(timezone.utc) - timedelta(minutes=25)
 		event = Event(
 			event_key="KFWD.TO.W.0017.2024",
 			nws_alert_id="alert-789",
@@ -1168,7 +1168,7 @@ class TestCheckCompletedEvents:
 			event_type="TOR",
 			hr_event_type="Tornado Warning",
 			locations=[],
-			start_date=past_date - timedelta(hours=1),
+			start_date=past_date - timedelta(minutes=30),
 			expected_end_date=past_date,
 			actual_end_date=None,
 			updated_at=past_date,
@@ -1206,10 +1206,10 @@ class TestCheckCompletedEvents:
 	@pytest.mark.asyncio
 	async def test_check_completed_events_not_past_timeout(self, mock_settings, mock_get_alert, mock_get_message_type, mock_client_class, mock_state):
 		"""Test that events not past timeout threshold are not marked inactive."""
-		mock_settings.event_completion_timeout_hours = 4
+		mock_settings.event_completion_timeout_minutes = 20
 		
-		# Create event past expected end date but not past timeout
-		past_date = datetime.now(timezone.utc) - timedelta(hours=2)
+		# Create event past expected end date but not past timeout (10 minutes < 20 minutes)
+		past_date = datetime.now(timezone.utc) - timedelta(minutes=10)
 		event = Event(
 			event_key="KFWD.TO.W.0018.2024",
 			nws_alert_id="alert-999",
@@ -1217,7 +1217,7 @@ class TestCheckCompletedEvents:
 			event_type="TOR",
 			hr_event_type="Tornado Warning",
 			locations=[],
-			start_date=past_date - timedelta(hours=1),
+			start_date=past_date - timedelta(minutes=30),
 			expected_end_date=past_date,
 			actual_end_date=None,
 			updated_at=past_date,

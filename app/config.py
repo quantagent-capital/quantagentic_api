@@ -30,7 +30,7 @@ class Settings:
 	ugc_zone_base_url: str = os.getenv("UGC_ZONE_BASE_URL", "https://api.weather.gov/zones/county/")
 	
 	# Event completion checking configuration
-	event_completion_timeout_hours: int = int(os.getenv("EVENT_COMPLETION_TIMEOUT_HOURS", "4"))
+	event_completion_timeout_minutes: int = int(os.getenv("EVENT_COMPLETION_TIMEOUT_MINUTES", "20"))
 	
 	# NWS polling filter configuration
 	nws_polling_certainty: str = os.getenv("NWS_POLLING_CERTAINTY", "Observed,Likely")

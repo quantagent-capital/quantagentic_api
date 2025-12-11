@@ -547,12 +547,12 @@ class EventService:
 					# Case 2: Message type is NOT CAN/EXP but current time is past expected_end_date by timeout
 					else:
 						current_time = datetime.now(timezone.utc)
-						timeout_hours = settings.event_completion_timeout_hours
-						timeout_threshold = event.expected_end_date + timedelta(hours=timeout_hours)
+						timeout_minutes = settings.event_completion_timeout_minutes
+						timeout_threshold = event.expected_end_date + timedelta(minutes=timeout_minutes)
 						
 						if current_time >= timeout_threshold:
 							logger.info(
-								f"Event {event.event_key} is past expected end date by {timeout_hours} hours "
+								f"Event {event.event_key} is past expected end date by {timeout_minutes} minutes "
 								f"(expected: {event.expected_end_date}, threshold: {timeout_threshold}) - marking as inactive"
 							)
 							should_deactivate = True
