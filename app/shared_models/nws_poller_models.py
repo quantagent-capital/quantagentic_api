@@ -24,6 +24,7 @@ class FilteredNWSAlert(BaseModel):
 	referenced_alerts: List[dict] = Field(description="List of referenced alert IDs")
 	expires: Optional[str] = Field(default=None, description="Expiration datetime")
 	expected_end: Optional[str] = Field(default=None, description="Expected end datetime") 
+	sent_at: Optional[str] = Field(default=None, description="Sent datetime from the NWS API")
 	headline: Optional[str] = Field(default=None, description="Alert headline")
 	description: Optional[str] = Field(default=None, description="Alert description")
 	raw_vtec: str = Field(description="Raw VTEC string from the alert")

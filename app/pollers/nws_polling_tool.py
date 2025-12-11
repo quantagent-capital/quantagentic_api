@@ -102,6 +102,7 @@ class NWSConfirmedEventsPoller:
 						certainty=properties.get("certainty"),
 						effective=properties.get("effective"),
 						expires=properties.get("expires"),
+						sent_at=properties.get("sent"),
 						headline=properties.get("headline"),
 						description=properties.get("description"), 
 						key=alert_key,

@@ -1,14 +1,13 @@
 """
 Celery task for disaster polling agent.
 """
-from typing import Any, List, Tuple
-from datetime import datetime, timezone
+from typing import List, Tuple
 from app.celery_app import celery_app
-from app.schemas.location import Location
-from app.shared_models.nws_poller_models import ClassifiedAlertsOutput, FilteredNWSAlert
+from app.shared_models.nws_poller_models import FilteredNWSAlert
 from app.pollers.nws_polling_tool import NWSConfirmedEventsPoller
 from app.state import state
 from app.services.event_service import EventService
+from app.processors.event_creation_processor import EventCreationProcessor
 import logging
 
 logger = logging.getLogger(__name__)
@@ -40,7 +39,10 @@ def disaster_polling_task(self):
 		# For alerts that link to existing events, check if they need updates or are duplicates
 		alerts_for_updateable_events = _filter_out_preprocessed_alerts(alerts_for_existing_events)
 	
-		_process_new_events(alerts_for_non_existing_events)
+		# Process new events using EventCreationProcessor
+		processor = EventCreationProcessor()
+		processor.process(alerts_for_non_existing_events)
+		
 		_process_updateable_events(alerts_for_updateable_events)
 		_check_completed_events()
 	
@@ -116,35 +118,6 @@ def _filter_out_preprocessed_alerts(alerts_for_existing_events: List[FilteredNWS
 	
 	return useable_alerts
 
-@staticmethod
-def _process_new_events(new_events: List[FilteredNWSAlert]):
-	"""
-	Process new events: iterate through and create events one by one.
-	
-	For each new event, calls EventService.create_event_from_alert.
-	If one fails, logs the error and continues processing the remaining events.
-	
-	Args:
-		new_events: List of FilteredNWSAlert objects for new events
-	"""
-	if not new_events:
-		logger.info("No new events to process")
-		return
-	
-	logger.info(f"Processing {len(new_events)} new events")
-
-	# Iterate through events one by one, creating each event
-	for alert in new_events:
-		try:
-			created_event = EventService.create_event_from_alert(alert)
-			logger.debug(f"Created event: `{created_event.event_key}` via service layer")
-		except Exception as e:
-			# Log error but continue processing remaining events
-			logger.error(f"Error creating event from alert: {alert.alert_id} via service layer: {str(e)}")
-			import traceback
-			logger.error(traceback.format_exc())
-	
-	logger.info(f"Finished processing {len(new_events)} new events")
 
 @staticmethod
 def _process_updateable_events(updateable_events: List[FilteredNWSAlert]):
