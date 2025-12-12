@@ -1,8 +1,12 @@
+import logging
 from typing import List, Optional
 from datetime import datetime
+from app.schemas.counties import County
 from app.schemas.event import Event
 from app.schemas.episode import Episode
 from app.redis_client import quantagent_redis
+
+logger = logging.getLogger(__name__)
 
 class State:
 	"""
@@ -34,7 +38,7 @@ class State:
 	_instance: Optional['State'] = None
 	REDIS_EVENT_KEY_PREFIX = "event:"
 	REDIS_EPISODE_KEY_PREFIX = "episode:"
-	
+	REDIS_COUNTY_KEY_PREFIX = "county:"
 	def __new__(cls):
 		if cls._instance is None:
 			cls._instance = super(State, cls).__new__(cls)
@@ -77,6 +81,27 @@ class State:
 				continue
 		
 		return events
+
+	@property
+	def counties(self) -> List[County]:
+		"""
+		Getter for counties.
+		Fetches all counties from Redis with prefix 'county:'.
+		Usage: counties = state.counties
+		"""
+		county_keys = quantagent_redis.get_all_keys(f"{State.REDIS_COUNTY_KEY_PREFIX}*")
+		counties = []
+		for key in county_keys:
+			try:
+				county_dict = quantagent_redis.read(key)
+				if county_dict is None:
+					continue
+				county = County.from_dict(county_dict)
+				counties.append(county)
+			except Exception as e:
+				logger.warning(f"Failed to load county from Redis key {key}: {str(e)}")
+				continue
+		return counties
 
 	@property
 	def active_events(self) -> List[Event]:
