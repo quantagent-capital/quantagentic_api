@@ -38,7 +38,11 @@ class Settings:
 	most_recent_drought_information_full_url: str = os.getenv("MOST_RECENT_DROUGHT_INFORMATION_FULL_URL", "https://www.ncei.noaa.gov/pub/data/nidis/geojson/us/usdm/USDM-current.geojson")
 	last_weeks_drought_information_base_url: str = os.getenv("LAST_WEEKS_DROUGHT_INFORMATION_BASE_URL", "https://droughtmonitor.unl.edu/")
 
-	@property
+	# We care about 2, 3, and 4
+	drought_severity_low_threshold: int = int(os.getenv("DROUGHT_SEVERITY_LOW_THRESHOLD", 2))
+	drought_severity_high_threshold: int = int(os.getenv("DROUGHT_SEVERITY_HIGH_THRESHOLD", 4))
+
+	@property           
 	def quantagentic_api_url(self) -> str:
 		"""Full QuantAgentic API URL."""
 		return f"{self.quantagentic_api_base_url}:{self.quantagent_api_port}"

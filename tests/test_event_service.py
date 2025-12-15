@@ -979,12 +979,9 @@ class TestStateActiveEvents:
 			raw_vtec="/O.NEW.KFWD.TO.W.0015.240115T1000Z-240115T1100Z/"
 		)
 		
-		# Mock Redis to return both events
+		# Mock Redis to return both events using read_all_as_schema
 		mock_redis.get_all_keys.return_value = ["event:active-event", "event:inactive-event"]
-		mock_redis.read.side_effect = [
-			active_event.to_dict(),
-			inactive_event.to_dict()
-		]
+		mock_redis.read_all_as_schema.return_value = [active_event, inactive_event]
 		
 		state = State()
 		result = state.active_events
@@ -1010,7 +1007,7 @@ class TestStateActiveEvents:
 		)
 		
 		mock_redis.get_all_keys.return_value = ["event:inactive-event"]
-		mock_redis.read.return_value = inactive_event.to_dict()
+		mock_redis.read_all_as_schema.return_value = [inactive_event]
 		
 		state = State()
 		result = state.active_events
@@ -1053,11 +1050,7 @@ class TestStateActiveEvents:
 		)
 		
 		mock_redis.get_all_keys.return_value = ["event:active-1", "event:inactive", "event:active-2"]
-		mock_redis.read.side_effect = [
-			active_event_1.to_dict(),
-			inactive_event.to_dict(),
-			active_event_2.to_dict()
-		]
+		mock_redis.read_all_as_schema.return_value = [active_event_1, inactive_event, active_event_2]
 		
 		state = State()
 		result = state.active_events

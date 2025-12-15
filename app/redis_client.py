@@ -1,7 +1,12 @@
 import json
 import redis
-from typing import Optional, Any, Dict
+import logging
+from typing import Optional, Any, Dict, TypeVar, Type
 from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+T = TypeVar('T')
 
 class QuantAgentRedis:
 	"""
@@ -60,6 +65,102 @@ class QuantAgentRedis:
 			return value
 		except Exception as e:
 			raise ValueError(f"Failed to read key {key}: {str(e)}")
+	
+	def _normalize_to_dict(self, data: Any, key: str, entity_type: str) -> Optional[Dict]:
+		"""
+		Normalize Redis data to a dictionary, handling edge cases.
+		
+		Args:
+			data: Raw data from Redis (could be None, str, or dict)
+			key: Redis key (for logging)
+			entity_type: Type of entity (for logging, e.g., "event", "drought")
+		
+		Returns:
+			Dictionary if successful, None otherwise
+		"""
+		if data is None:
+			return None
+		
+		# Handle case where Redis returns a string instead of dict
+		# (can happen if JSON parsing failed in read method)
+		if isinstance(data, str):
+			try:
+				data = json.loads(data)
+			except json.JSONDecodeError:
+				logger.warning(f"Failed to parse {entity_type} JSON string from Redis key {key}")
+				return None
+		
+		# Ensure we have a dictionary
+		if not isinstance(data, dict):
+			logger.warning(f"{entity_type.capitalize()} data from Redis key {key} is not a dictionary: {type(data)}")
+			return None
+		
+		return data
+	
+	def read_as_dict(self, key: str, entity_type: str = "entity") -> Optional[Dict]:
+		"""
+		Read a value from Redis and normalize it to a dictionary.
+		Handles edge cases like string values and type checking.
+		
+		Args:
+			key: Redis key
+			entity_type: Type of entity (for logging)
+		
+		Returns:
+			Dictionary if successful, None otherwise
+		"""
+		try:
+			raw_data = self.read(key)
+			return self._normalize_to_dict(raw_data, key, entity_type)
+		except Exception as e:
+			logger.warning(f"Failed to read {entity_type} from Redis key {key}: {str(e)}")
+			return None
+	
+	def read_as_schema(self, key: str, schema_class: Type[T], entity_type: str = "entity") -> Optional[T]:
+		"""
+		Read a value from Redis and deserialize it to a schema object.
+		Handles all edge cases: None values, string conversion, type checking, and errors.
+		
+		Args:
+			key: Redis key
+			schema_class: Schema class with from_dict method (e.g., Event, Drought)
+			entity_type: Type of entity (for logging)
+		
+		Returns:
+			Schema object if successful, None otherwise
+		"""
+		try:
+			raw_data = self.read(key)
+			normalized_data = self._normalize_to_dict(raw_data, key, entity_type)
+			
+			if normalized_data is None:
+				return None
+			
+			# Convert dictionary to schema object
+			return schema_class.from_dict(normalized_data)
+		except Exception as e:
+			logger.warning(f"Failed to load {entity_type} from Redis key {key}: {str(e)}")
+			return None
+	
+	def read_all_as_schema(self, keys: list[str], schema_class: Type[T], entity_type: str = "entity") -> list[T]:
+		"""
+		Read multiple values from Redis and deserialize them to schema objects.
+		Handles all edge cases and continues processing even if some fail.
+		
+		Args:
+			keys: List of Redis keys
+			schema_class: Schema class with from_dict method
+			entity_type: Type of entity (for logging)
+		
+		Returns:
+			List of schema objects (only successful deserializations)
+		"""
+		results = []
+		for key in keys:
+			schema_obj = self.read_as_schema(key, schema_class, entity_type)
+			if schema_obj is not None:
+				results.append(schema_obj)
+		return results
 	
 	def update(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
 		"""

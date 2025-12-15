@@ -2,7 +2,7 @@
 Datetime utility functions.
 """
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ def parse_datetime_to_utc(dt_string: Optional[str]) -> Optional[datetime]:
 	
 	Args:
 		dt_string: ISO format datetime string or None
-		
+	
 	Returns:
 		datetime object in UTC timezone or None
 	"""
@@ -44,3 +44,21 @@ def parse_datetime_to_utc(dt_string: Optional[str]) -> Optional[datetime]:
 	except (ValueError, AttributeError) as e:
 		logger.warning(f"Failed to parse datetime string '{dt_string}': {str(e)}")
 		return None
+
+
+def get_last_tuesday_date() -> str:
+	"""
+	Get the date string (YYYYMMDD) for the most recent Tuesday.
+	Drought Monitor data is published on Tuesdays.
+	
+	Returns:
+		Date string in YYYYMMDD format
+	"""
+	today = datetime.now(timezone.utc)
+	weekday = today.weekday()
+	days_since_tuesday = (weekday - 1 + 7) % 7
+	
+	# If today is Tuesday, days_since_tuesday will be 0
+	last_tuesday = today - timedelta(days=days_since_tuesday)
+	
+	return last_tuesday.strftime("%Y%m%d")

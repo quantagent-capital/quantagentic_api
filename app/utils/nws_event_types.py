@@ -80,7 +80,7 @@ def get_event_code_name(code: str) -> str:
 		Full name or "Unknown" if not found
 	"""
 	code_upper = code.upper()
-	return NWS_WARNING_CODES.get(code_upper) or NWS_WATCH_CODES.get(code_upper) or "Unknown"
+	return NWS_WARNING_CODES.get(code_upper) or NWS_WATCH_CODES.get(code_upper) or INTERNAL_EVENT_CODES.get(code_upper) or "Unknown"
 
 
 def get_warning_codes() -> List[str]:
