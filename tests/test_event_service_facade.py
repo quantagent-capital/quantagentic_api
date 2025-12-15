@@ -22,14 +22,25 @@ class TestEventServiceFacade:
 		assert result == mock_event
 	
 	@patch('app.services.event_crud_service.EventCRUDService.get_events')
-	def test_get_events_delegates(self, mock_get_events):
-		"""Test that EventService.get_events delegates to EventCRUDService."""
+	def test_get_events_delegates_with_default(self, mock_get_events):
+		"""Test that EventService.get_events delegates to EventCRUDService with default active_only=True."""
 		mock_events = [Mock(spec=Event), Mock(spec=Event)]
 		mock_get_events.return_value = mock_events
 		
-		result = EventService.get_events(24)
+		result = EventService.get_events()
 		
-		mock_get_events.assert_called_once_with(24)
+		mock_get_events.assert_called_once_with(True)
+		assert result == mock_events
+	
+	@patch('app.services.event_crud_service.EventCRUDService.get_events')
+	def test_get_events_delegates_with_explicit_active_only(self, mock_get_events):
+		"""Test that EventService.get_events delegates to EventCRUDService with explicit active_only parameter."""
+		mock_events = [Mock(spec=Event), Mock(spec=Event)]
+		mock_get_events.return_value = mock_events
+		
+		result = EventService.get_events(active_only=False)
+		
+		mock_get_events.assert_called_once_with(False)
 		assert result == mock_events
 	
 	@patch('app.services.event_create_service.EventCreateService.create_event_from_alert')

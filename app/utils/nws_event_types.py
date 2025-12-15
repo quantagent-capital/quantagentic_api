@@ -48,9 +48,13 @@ NWS_WATCH_CODES: Dict[str, str] = {
 	"BZA": "Blizzard Watch",
 }
 
+INTERNAL_EVENT_CODES: Dict[str, str] = {
+	"DRT": "Drought",
+}
+
 # Combined set of all valid codes
 ALL_NWS_EVENT_CODES: Set[str] = set(NWS_WARNING_CODES.keys()) | set(NWS_WATCH_CODES.keys())
-
+ALL_EVENT_CODES: Set[str] = ALL_NWS_EVENT_CODES | set(INTERNAL_EVENT_CODES.keys())
 
 def is_valid_event_code(code: str) -> bool:
 	"""

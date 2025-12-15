@@ -1,5 +1,5 @@
 from fastapi import APIRouter, status, Query
-from typing import List, Dict, Optional
+from typing import List, Dict
 from app.exceptions.base import ConflictError
 from app.schemas.event import Event
 from app.shared_models.nws_poller_models import FilteredNWSAlert
@@ -11,19 +11,19 @@ logger = logging.getLogger(__name__)
 
 @router.get("/", response_model=List[Event])
 @handle_service_exceptions
-async def get_events(hour_offset: Optional[int] = Query(default=72, description="Hours to look back from now for filtering events")):
+async def get_events(
+	active_only: bool = Query(default=True, description="If true, return only active events")
+):
 	"""
-	Get events from state, optionally filtered by hour_offset.
+	Get events from state, optionally filtered by active_only.
 	
 	Args:
-		hour_offset: Hours to look back from now. Default is 72 hours.
-			Events are included if the calculated time point (now - hour_offset) 
-			falls between start_date and actual_end_date, or if either date is null.
+		active_only: If true, return only events from state.active_events. Default is True.
 	
 	Returns:
 		List of Event objects matching the filter criteria
 	"""
-	events = EventService.get_events(hour_offset=hour_offset)
+	events = EventService.get_events(active_only=active_only)
 	return events
 
 @router.post("/", response_model=Event, status_code=status.HTTP_201_CREATED)

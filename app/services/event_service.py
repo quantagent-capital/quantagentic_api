@@ -30,9 +30,9 @@ class EventService:
 		return EventCRUDService.has_episode(event_key)
 
 	@staticmethod
-	def get_events(hour_offset: Optional[int] = 72) -> List[Event]:
-		"""Get events from state, optionally filtered by hour_offset."""
-		return EventCRUDService.get_events(hour_offset)
+	def get_events(active_only: bool = True) -> List[Event]:
+		"""Get events from state, optionally filtered by active_only."""
+		return EventCRUDService.get_events(active_only)
 
 	@staticmethod
 	def get_active_event_counts_by_type() -> Dict[str, int]:
