@@ -44,4 +44,5 @@ celery_app.conf.timezone = "UTC"
 # Import tasks to ensure they're registered
 # This must be done AFTER celery_app is created
 import app.tasks.disaster_polling_task  # noqa: F401
+import app.tasks.drought_sync_task  # noqa: F401
 

@@ -8,6 +8,22 @@ echo "=========================================="
 echo "Starting QuantAgentic API services..."
 echo "=========================================="
 
+# Seed counties if SEED_COUNTIES is not set to "false"
+# This ensures counties are available before services start
+if [ "${SEED_COUNTIES:-true}" != "false" ]; then
+    echo "Seeding counties data..."
+    if python3 app/seeds/seed_counties.py; then
+        echo "County seeding completed successfully"
+    else
+        echo "WARNING: County seeding failed, but continuing startup..."
+        echo "Services will start, but drought sync may not work without county data"
+    fi
+else
+    echo "Skipping county seeding (SEED_COUNTIES=false)"
+fi
+
+echo "=========================================="
+
 # Start Celery worker with beat in the background
 # Note: Celery will use the logging configuration from app.logging_config
 # which outputs structured JSON to stdout (not stderr)

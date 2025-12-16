@@ -2,8 +2,9 @@
 Datetime utility functions.
 """
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta, time
 import logging
+import zoneinfo
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ def parse_datetime_to_utc(dt_string: Optional[str]) -> Optional[datetime]:
 	
 	Args:
 		dt_string: ISO format datetime string or None
-		
+	
 	Returns:
 		datetime object in UTC timezone or None
 	"""
@@ -44,3 +45,38 @@ def parse_datetime_to_utc(dt_string: Optional[str]) -> Optional[datetime]:
 	except (ValueError, AttributeError) as e:
 		logger.warning(f"Failed to parse datetime string '{dt_string}': {str(e)}")
 		return None
+
+
+def get_last_tuesday_date() -> str:
+	"""
+	Get the date string (YYYYMMDD) for the most recent Tuesday.
+	Drought Monitor data is published on Tuesdays.
+	
+	Special case: If today is Tuesday, Wednesday, or Thursday before 8:30 AM Eastern,
+	we should use the data from two Tuesdays ago instead of the most recent Tuesday.
+
+	This is because the drought monitor data is published on Thursdays, _for the previous Tuesday to Tuesday_.
+	
+	Returns:
+		Date string in YYYYMMDD format
+	"""
+	# Get current time in UTC and convert to Eastern timezone
+	now_utc = datetime.now(timezone.utc)
+	eastern_tz = zoneinfo.ZoneInfo("America/New_York")
+	now_eastern = now_utc.astimezone(eastern_tz)
+	
+	# Check if we need to use two Tuesdays ago
+	# Tuesday = 1, Wednesday = 2, Thursday = 3
+	weekday = now_eastern.weekday()
+	is_tue_wed_thu = weekday in [1, 2, 3]
+	is_before_830_am = now_eastern.time() < time(8, 30)
+	
+	# Calculate days since most recent Tuesday
+	days_since_tuesday = (weekday - 1 + 7) % 7
+	last_tuesday = now_eastern - timedelta(days=days_since_tuesday)
+	
+	# If it's Tuesday/Wednesday/Thursday before 8:30 AM Eastern, use two Tuesdays ago
+	if is_tue_wed_thu and is_before_830_am:
+		last_tuesday = last_tuesday - timedelta(days=7)
+	
+	return last_tuesday.strftime("%Y%m%d")

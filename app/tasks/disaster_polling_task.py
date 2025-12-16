@@ -38,7 +38,6 @@ def disaster_polling_task(self):
 
 		# For alerts that link to existing events, check if they need updates or are duplicates
 		alerts_for_updateable_events = _filter_out_preprocessed_alerts(alerts_for_existing_events)
-	
 
 		ecp = EventCreationProcessor()
 		ecp.process(alerts_for_non_existing_events)		

@@ -1,8 +1,12 @@
+import logging
 from typing import List, Optional
 from datetime import datetime
+from app.schemas.counties import County
 from app.schemas.event import Event
 from app.schemas.episode import Episode
+from app.schemas.drought import Drought
 from app.redis_client import quantagent_redis
+logger = logging.getLogger(__name__)
 
 class State:
 	"""
@@ -34,7 +38,8 @@ class State:
 	_instance: Optional['State'] = None
 	REDIS_EVENT_KEY_PREFIX = "event:"
 	REDIS_EPISODE_KEY_PREFIX = "episode:"
-	
+	REDIS_COUNTY_KEY_PREFIX = "county:"
+	REDIS_DROUGHT_KEY_PREFIX = "drought:"
 	def __new__(cls):
 		if cls._instance is None:
 			cls._instance = super(State, cls).__new__(cls)
@@ -55,28 +60,18 @@ class State:
 		Fetches all events from Redis with prefix 'event:'.
 		Usage: events = state.events
 		"""
-		# Get all keys matching the event pattern
 		event_keys = quantagent_redis.get_all_keys(f"{State.REDIS_EVENT_KEY_PREFIX}*")
-		
-		# Fetch all events from Redis and convert to Event objects
-		events = []
-		for key in event_keys:
-			try:
-				event_dict = quantagent_redis.read(key)
-				if event_dict is None:
-					continue
-				
-				# Convert dictionary to Event object
-				event = Event.from_dict(event_dict)
-				events.append(event)
-			except Exception as e:
-				# Log error but continue processing other events
-				import logging
-				logger = logging.getLogger(__name__)
-				logger.warning(f"Failed to load event from Redis key {key}: {str(e)}")
-				continue
-		
-		return events
+		return quantagent_redis.read_all_as_schema(event_keys, Event, "event")
+
+	@property
+	def counties(self) -> List[County]:
+		"""
+		Getter for counties.
+		Fetches all counties from Redis with prefix 'county:'.
+		Usage: counties = state.counties
+		"""
+		county_keys = quantagent_redis.get_all_keys(f"{State.REDIS_COUNTY_KEY_PREFIX}*")
+		return quantagent_redis.read_all_as_schema(county_keys, County, "county")
 
 	@property
 	def active_events(self) -> List[Event]:
@@ -130,10 +125,69 @@ class State:
 	def get_event(self, event_key: str) -> Optional[Event]:
 		"""Get an event by key."""
 		redis_key = f"{State.REDIS_EVENT_KEY_PREFIX}{event_key}"
-		event_dict = quantagent_redis.read(redis_key)
-		if event_dict is None:
-			return None
-		return Event.from_dict(event_dict)
+		return quantagent_redis.read_as_schema(redis_key, Event, "event")
+
+	@property
+	def droughts(self) -> List[Drought]:
+		"""
+		Getter for droughts.
+		Fetches all droughts from Redis with prefix 'drought:'.
+		Usage: droughts = state.droughts
+		"""
+		drought_keys = quantagent_redis.get_all_keys(f"{State.REDIS_DROUGHT_KEY_PREFIX}*")
+		return quantagent_redis.read_all_as_schema(drought_keys, Drought, "drought")
+
+	@property
+	def active_droughts(self) -> List[Drought]:
+		"""
+		Getter for active droughts.
+		Fetches all droughts from Redis and filters by is_active=True.
+		Usage: active_droughts = state.active_droughts
+		"""
+		all_droughts = self.droughts
+		return [drought for drought in all_droughts if drought.is_active is True]
+
+	def add_drought(self, drought: Drought):
+		"""
+		Add a drought to both Redis and in-memory collection.
+		
+		Args:
+			drought: Drought object
+		"""
+		redis_key = f"{State.REDIS_DROUGHT_KEY_PREFIX}{drought.event_key}"
+		quantagent_redis.create(redis_key, drought.to_dict())
+	
+	def remove_drought(self, event_key: str):
+		"""Remove a drought by event_key."""
+		redis_key = f"{State.REDIS_DROUGHT_KEY_PREFIX}{event_key}"
+		quantagent_redis.delete(redis_key)
+
+	def update_drought(self, drought: Drought):
+		"""Update a drought in both Redis and in-memory collection."""
+		redis_key = f"{State.REDIS_DROUGHT_KEY_PREFIX}{drought.event_key}"
+		quantagent_redis.update(redis_key, drought.to_dict())
+	
+	def active_drought_exists(self, event_key: str) -> bool:
+		"""
+		Check if a active drought exists with the given event_key.
+		
+		Args:
+			event_key: Event key to check
+			
+		Returns:
+			True if a active drought exists, False otherwise
+		"""
+		redis_key = f"{State.REDIS_DROUGHT_KEY_PREFIX}{event_key}"
+		drought_dict = quantagent_redis.read_as_dict(redis_key, "drought")
+		if drought_dict is None or drought_dict.get('is_active', False) is False:
+			return False
+		
+		return True
+
+	def get_drought(self, event_key: str) -> Optional[Drought]:
+		"""Get a drought by event_key."""
+		redis_key = f"{State.REDIS_DROUGHT_KEY_PREFIX}{event_key}"
+		return quantagent_redis.read_as_schema(redis_key, Drought, "drought")
 
 # Global state instance
 state = State()
