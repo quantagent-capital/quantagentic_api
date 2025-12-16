@@ -40,7 +40,6 @@ class EventCRUDService:
 		Returns:
 			True if event has an episode_key, False otherwise
 		"""
-		# TODO: Implement has_episode logic
 		try:
 			event = EventCRUDService.get_event(event_key)
 			return event.episode_key is not None

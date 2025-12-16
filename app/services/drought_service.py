@@ -54,7 +54,7 @@ class DroughtService:
 			raise
 		
 		try:
-			previous_date_str = get_last_tuesday_date() # TODO, this could be wrong for days of Tuesday -> Thursday. I think there is a lag. I set a reminder on my phone to test this on Wednesday.
+			previous_date_str = get_last_tuesday_date()
 			previous_gdf = DroughtClient.fetch_previous_week_drought_shapefile(previous_date_str)
 			logger.info(f"Fetched previous week drought map ({previous_date_str}) with {len(previous_gdf)} polygons")
 		except Exception as e:
