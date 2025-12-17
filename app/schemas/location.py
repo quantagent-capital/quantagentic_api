@@ -15,7 +15,8 @@ class Location(BaseSchema):
 	state_fips: str
 	county_fips: str
 	ugc_code: str
-	shape: List[Coordinate]
+	shape: Optional[List[Coordinate]] = None
+	full_shape: Optional[List[List[Coordinate]]] = None
 	full_zone_ugc_endpoint: str
 	starting_point: Optional[Coordinate] = None  # Optional starting point (e.g., for wildfires)
 
@@ -81,15 +82,20 @@ class Location(BaseSchema):
 		return shape
 
 	@staticmethod
-	def extract_coordinates_from_geometry_for_wildfire(geometry: Dict[str, Any]) -> List[Coordinate]:
-		shape = []
+	def extract_all_shapes(geometry: Dict[str, Any]) -> List[List[Coordinate]]:
+		"""
+		Extracts ALL separate polygons from the geometry.
+		Returns a List of Lists of Coordinates.
+		"""
+		all_shapes = []
+		
 		geom_type = geometry.get("type")
 		coordinates_raw = geometry.get("coordinates", [])
 		
 		if not coordinates_raw:
-			return shape
-		
-		# --- HELPER: Turn a raw ring into your Coordinate objects ---
+			return all_shapes
+			
+		# --- HELPER ---
 		def parse_ring(ring):
 			coords = []
 			for coord_pair in ring:
@@ -99,30 +105,19 @@ class Location(BaseSchema):
 
 		if geom_type == "Polygon":
 			# Structure: [ [Exterior], [Hole], [Hole] ]
+			# We treat the exterior ring as the first shape
 			if len(coordinates_raw) > 0:
-				# Still taking just the exterior ring (index 0), ignoring holes
-				return parse_ring(coordinates_raw[0])
+				exterior_ring = parse_ring(coordinates_raw[0])
+				all_shapes.append(exterior_ring)
 		
 		elif geom_type == "MultiPolygon":
 			# Structure: [ [[Exterior], [Hole]], [[Exterior], [Hole]] ]
-			# GOAL: Find the largest polygon (The Main Fire)
-			
-			largest_ring_coords = []
-			max_points = 0
-			
 			for polygon in coordinates_raw:
 				if len(polygon) > 0:
-					# The exterior ring is always the first one in the polygon list
-					exterior_ring = polygon[0]
+					exterior_ring = parse_ring(polygon[0])
+					all_shapes.append(exterior_ring)
 					
-					# Simple heuristic: The "main" fire has the most points
-					if len(exterior_ring) > max_points:
-						max_points = len(exterior_ring)
-						largest_ring_coords = parse_ring(exterior_ring)
-			
-			return largest_ring_coords
-			
-		return shape
+		return all_shapes
 
 	@staticmethod
 	def get_state_fips(state_abbr: str) -> str:

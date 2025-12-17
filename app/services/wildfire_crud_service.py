@@ -50,7 +50,9 @@ class WildfireCRUDService:
 		)
 		
 		# Extract shape coordinates
-		shape = Location.extract_coordinates_from_geometry_for_wildfire(geometry)
+		full_shape = Location.extract_all_shapes(geometry)
+		# Also extract single shape for backward compatibility
+		shape = Location.extract_coordinates_from_geometry(geometry)
 		
 		# Create location
 		location = Location(
@@ -60,6 +62,7 @@ class WildfireCRUDService:
 			county_fips=county_fips,
 			ugc_code="",  # Not applicable for wildfires
 			shape=shape,
+			full_shape=full_shape,
 			full_zone_ugc_endpoint="",  # Not applicable for wildfires
 			starting_point=starting_point
 		)
@@ -150,6 +153,8 @@ class WildfireCRUDService:
 		percent_contained_int = int(percent_contained) if percent_contained is not None else None
 		
 		# Extract NEW shape coordinates
+		full_shape = Location.extract_all_shapes(geometry)
+		# Also extract single shape for backward compatibility
 		shape = Location.extract_coordinates_from_geometry(geometry)
 		
 		# Create updated location (preserving existing fips and state_fips, but updating shape)
@@ -160,6 +165,7 @@ class WildfireCRUDService:
 			county_fips=existing_wildfire.location.county_fips,  # KEEP EXISTING
 			ugc_code=existing_wildfire.location.ugc_code,
 			shape=shape,  # NEW VALUE
+			full_shape=full_shape,  # NEW VALUE
 			full_zone_ugc_endpoint=existing_wildfire.location.full_zone_ugc_endpoint,
 			starting_point=existing_wildfire.location.starting_point  # KEEP EXISTING
 		)
