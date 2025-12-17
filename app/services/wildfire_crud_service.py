@@ -50,7 +50,7 @@ class WildfireCRUDService:
 		)
 		
 		# Extract shape coordinates
-		shape = Location.extract_coordinates_from_geometry(geometry)
+		shape = Location.extract_coordinates_from_geometry_for_wildfire(geometry)
 		
 		# Create location
 		location = Location(

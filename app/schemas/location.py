@@ -81,6 +81,50 @@ class Location(BaseSchema):
 		return shape
 
 	@staticmethod
+	def extract_coordinates_from_geometry_for_wildfire(geometry: Dict[str, Any]) -> List[Coordinate]:
+		shape = []
+		geom_type = geometry.get("type")
+		coordinates_raw = geometry.get("coordinates", [])
+		
+		if not coordinates_raw:
+			return shape
+		
+		# --- HELPER: Turn a raw ring into your Coordinate objects ---
+		def parse_ring(ring):
+			coords = []
+			for coord_pair in ring:
+				if len(coord_pair) >= 2:
+					coords.append(Coordinate(latitude=coord_pair[1], longitude=coord_pair[0]))
+			return coords
+
+		if geom_type == "Polygon":
+			# Structure: [ [Exterior], [Hole], [Hole] ]
+			if len(coordinates_raw) > 0:
+				# Still taking just the exterior ring (index 0), ignoring holes
+				return parse_ring(coordinates_raw[0])
+		
+		elif geom_type == "MultiPolygon":
+			# Structure: [ [[Exterior], [Hole]], [[Exterior], [Hole]] ]
+			# GOAL: Find the largest polygon (The Main Fire)
+			
+			largest_ring_coords = []
+			max_points = 0
+			
+			for polygon in coordinates_raw:
+				if len(polygon) > 0:
+					# The exterior ring is always the first one in the polygon list
+					exterior_ring = polygon[0]
+					
+					# Simple heuristic: The "main" fire has the most points
+					if len(exterior_ring) > max_points:
+						max_points = len(exterior_ring)
+						largest_ring_coords = parse_ring(exterior_ring)
+			
+			return largest_ring_coords
+			
+		return shape
+
+	@staticmethod
 	def get_state_fips(state_abbr: str) -> str:
 		"""
 		Maps a 2-letter state abbreviation to its official 2-digit FIPS code.
