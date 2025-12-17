@@ -9,6 +9,21 @@ import zoneinfo
 logger = logging.getLogger(__name__)
 
 
+def parse_timestamp_ms(timestamp_ms: Optional[int]) -> Optional[datetime]:
+	"""
+	Convert milliseconds timestamp to datetime.
+	
+	Args:
+		timestamp_ms: Timestamp in milliseconds
+	
+	Returns:
+		datetime object in UTC, or None if timestamp is None
+	"""
+	if timestamp_ms is None:
+		return None
+	return datetime.fromtimestamp(timestamp_ms / 1000.0, tz=timezone.utc)
+
+
 def parse_datetime_to_utc(dt_string: Optional[str]) -> Optional[datetime]:
 	"""
 	Parse a datetime string to a datetime object in UTC.

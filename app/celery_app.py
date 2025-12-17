@@ -37,6 +37,10 @@ celery_app.conf.beat_schedule = {
 		"task": "app.tasks.disaster_polling_task",
 		"schedule": schedule(run_every=timedelta(minutes=5)),  # Every 5 minutes, runs immediately on startup
 	},
+	"wildfire-sync": {
+		"task": "app.tasks.wildfire_sync_task",
+		"schedule": crontab(hour=13, minute=30),  # 8:30 AM EST / 9:30 AM EDT (13:30 UTC)
+	},
 }
 
 celery_app.conf.timezone = "UTC"
@@ -45,4 +49,5 @@ celery_app.conf.timezone = "UTC"
 # This must be done AFTER celery_app is created
 import app.tasks.disaster_polling_task  # noqa: F401
 import app.tasks.drought_sync_task  # noqa: F401
+import app.tasks.wildfire_sync_task  # noqa: F401
 

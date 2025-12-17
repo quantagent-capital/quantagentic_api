@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from app.schemas.base import BaseSchema
 
 logger = logging.getLogger(__name__)
@@ -17,6 +17,68 @@ class Location(BaseSchema):
 	ugc_code: str
 	shape: List[Coordinate]
 	full_zone_ugc_endpoint: str
+	starting_point: Optional[Coordinate] = None  # Optional starting point (e.g., for wildfires)
+
+	@staticmethod
+	def parse_fips(full_fips: Optional[str]) -> tuple[str, str]:
+		"""
+		Parse full FIPS code (e.g., "01012") into state_fips and county_fips.
+		
+		Args:
+			full_fips: Full FIPS code (first 2 digits are state, rest is county)
+		
+		Returns:
+			Tuple of (state_fips, county_fips)
+		"""
+		if not full_fips or len(full_fips) < 2:
+			return ("UNKNOWN", "UNKNOWN")
+		
+		state_fips = full_fips[:2]
+		county_fips = full_fips[2:] if len(full_fips) > 2 else "UNKNOWN"
+		return (state_fips, county_fips)
+
+	@staticmethod
+	def extract_coordinates_from_geometry(geometry: Dict[str, Any]) -> List[Coordinate]:
+		"""
+		Extract coordinates from a geometry object (Polygon or MultiPolygon).
+		For MultiPolygon, we take the outermost perimeter (first polygon's first ring).
+		
+		Args:
+			geometry: Geometry object with type and coordinates
+		
+		Returns:
+			List of Coordinate objects extracted from the geometry
+		"""
+		shape = []
+		geom_type = geometry.get("type")
+		coordinates_raw = geometry.get("coordinates", [])
+		
+		if not coordinates_raw:
+			return shape
+		
+		if geom_type == "Polygon":
+			# Polygon structure: [[[lon, lat], [lon, lat], ...]]
+			# We take the first ring (exterior boundary)
+			if len(coordinates_raw) > 0:
+				polygon_ring = coordinates_raw[0]
+				for coord_pair in polygon_ring:
+					if len(coord_pair) >= 2:
+						lon, lat = coord_pair[0], coord_pair[1]
+						shape.append(Coordinate(latitude=lat, longitude=lon))
+		
+		elif geom_type == "MultiPolygon":
+			# MultiPolygon structure: [[[[lon, lat], ...], ...], ...]
+			# We take the first polygon's first ring (exterior boundary of first polygon)
+			if len(coordinates_raw) > 0:
+				first_polygon = coordinates_raw[0]
+				if len(first_polygon) > 0:
+					polygon_ring = first_polygon[0]
+					for coord_pair in polygon_ring:
+						if len(coord_pair) >= 2:
+							lon, lat = coord_pair[0], coord_pair[1]
+							shape.append(Coordinate(latitude=lat, longitude=lon))
+		
+		return shape
 
 	@staticmethod
 	def get_state_fips(state_abbr: str) -> str:
