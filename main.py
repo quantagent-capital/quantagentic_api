@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.controllers import event_controller, drought_controller
+from app.controllers import event_controller, drought_controller, wildfire_controller
 from app.logging_config import setup_logging
 import os
 
@@ -28,6 +28,7 @@ app.add_middleware(
 # Include routers
 app.include_router(event_controller.router)
 app.include_router(drought_controller.router)
+app.include_router(wildfire_controller.router)
 
 @app.get("/")
 async def root():
@@ -36,7 +37,8 @@ async def root():
 		"message": "Welcome to QuantAgentic API!",
 		"endpoints": {
 			"events": "/events",
-			"drought": "/drought"
+			"drought": "/drought",
+			"wildfire": "/wildfire"
 		}
 	}
 

@@ -42,6 +42,14 @@ class Settings:
 	drought_severity_low_threshold: int = int(os.getenv("DROUGHT_SEVERITY_LOW_THRESHOLD", 2))
 	drought_severity_high_threshold: int = int(os.getenv("DROUGHT_SEVERITY_HIGH_THRESHOLD", 4))
 
+
+	# Wildfire staleness threshold (default: 7 days in milliseconds)
+	wildfire_staleness_threshold_days: int = int(os.getenv("WILDFIRE_STALENESS_THRESHOLD_DAYS", 7))
+	wildfire_staleness_threshold_ms: int = int(os.getenv("WILDFIRE_STALENESS_THRESHOLD_MS", str(wildfire_staleness_threshold_days * 24 * 60 * 60 * 1000)))
+	
+	# Wildfire ArcGIS API configuration
+	wildfire_arcgis_base_url: str = os.getenv("WILDFIRE_ARCGIS_BASE_URL", "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters/FeatureServer/0/query")
+
 	@property           
 	def quantagentic_api_url(self) -> str:
 		"""Full QuantAgentic API URL."""

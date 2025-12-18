@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from app.utils.nws_event_types import NWS_WARNING_CODES
+from app.utils.event_types import NWS_WARNING_CODES
 from app.exceptions.base import ConflictError
 from app.schemas.event import Event
 from app.shared_models.nws_poller_models import FilteredNWSAlert

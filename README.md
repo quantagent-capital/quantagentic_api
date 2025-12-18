@@ -14,7 +14,6 @@ tags:
 
 A FastAPI-based API for managing disaster events with AI agents powered by CrewAI. Features automated background workers that poll the National Weather Service (NWS) API and intelligently classify alerts into events.
 
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/-NvLj4?referralCode=CRJ8FE)
 
 ## ✨ Features
 
@@ -23,10 +22,17 @@ A FastAPI-based API for managing disaster events with AI agents powered by CrewA
 - **CrewAI** for AI agent orchestration with structured outputs
 - **Celery & CeleryBeat** for background task processing
 - **Docker Compose** for local Redis setup
-- **NWS API Integration** with robust HTTP client
+- **Multi-Source Disaster Data Integration**:
+  - **NWS API Integration** - National Weather Service alerts (tornadoes, floods, severe weather, etc.)
+  - **ArcGIS Wildfire API** - Real-time wildfire tracking from USGS
+  - **Drought Monitor API** - US Drought Monitor data for tracking drought conditions
 - **Shared state management** for API and agents
-- **Disaster Polling Agent** that automatically processes NWS alerts every 5 minutes
+- **Automated Background Workers**:
+  - **Disaster Polling Agent** - Processes NWS alerts every 5 minutes
+  - **Wildfire Sync Task** - Syncs wildfire data from ArcGIS API
+  - **Drought Sync Task** - Syncs drought data from US Drought Monitor
 - **VTEC Key Generation** for unique alert identification
+- **Event Lifecycle Management** - Automatic creation, updates, and completion of disaster events
 
 ## 🚀 Getting Started (Mac)
 
@@ -119,7 +125,10 @@ A FastAPI-based API for managing disaster events with AI agents powered by CrewA
    celery -A app.celery_app worker --beat --loglevel=info
    ```
    
-   This starts both the Celery worker and the CeleryBeat scheduler. The disaster polling agent will run immediately on startup, then every 5 minutes.
+   This starts both the Celery worker and the CeleryBeat scheduler. Background tasks will run on their configured schedules:
+   - **Disaster Polling Agent**: Every 5 minutes
+   - **Wildfire Sync Task**: As configured in CeleryBeat schedule
+   - **Drought Sync Task**: As configured in CeleryBeat schedule
    
    **Viewing Task Output:**
    - The task will log detailed output to the console with `INFO` level logging
@@ -127,9 +136,11 @@ A FastAPI-based API for managing disaster events with AI agents powered by CrewA
      ```bash
      celery -A app.celery_app worker --beat --loglevel=debug
      ```
-   - To manually trigger the task for testing:
+   - To manually trigger tasks for testing:
      ```bash
      celery -A app.celery_app call app.tasks.disaster_polling_task
+     celery -A app.celery_app call app.tasks.wildfire_sync_task
+     celery -A app.celery_app call app.tasks.drought_sync_task
      ```
    - To monitor task execution in real-time, use Flower (optional):
      ```bash
@@ -181,10 +192,19 @@ quantagentic_api/
 │   ├── celery_app.py                # Celery application configuration
 │   ├── redis_client.py              # Redis client wrapper (quantagent_redis)
 │   ├── state.py                     # Shared state object for API and agents
-│   ├── schemas/                     # Pydantic models (Location, Event)
-│   ├── services/                    # Business logic layer
-│   ├── controllers/                 # FastAPI route handlers
-│   ├── http_client/                 # HTTP client for external APIs (NWS)
+│   ├── schemas/                     # Pydantic models (Event, Wildfire, Drought, Location)
+│   ├── services/                    # Business logic layer (CRUD services, event services)
+│   ├── controllers/                 # FastAPI route handlers (events, wildfires, droughts)
+│   ├── processors/                  # Data processing logic (wildfire, event creation)
+│   ├── http_client/                 # HTTP clients for external APIs
+│   │   ├── nws_client.py            # NWS API client
+│   │   ├── wildfire_client.py      # ArcGIS Wildfire API client
+│   │   └── drought_client.py        # US Drought Monitor API client
+│   ├── utils/                       # Utility functions
+│   │   ├── arcgis_wildfire_parser.py  # ArcGIS wildfire data parser
+│   │   ├── datetime_utils.py        # Datetime utilities
+│   │   ├── event_types.py          # NWS event type codes
+│   │   └── vtec.py                  # VTEC key generation
 │   ├── crews/                       # CrewAI crews and shared resources
 │   │   ├── base_executor.py         # Base executor with retry logic
 │   │   ├── tools/                   # Shared CrewAI tools
@@ -193,6 +213,11 @@ quantagentic_api/
 │   │   │   └── forecast_zone_tool.py
 │   │   ├── utils/                   # Shared utilities
 │   ├── tasks/                       # Celery tasks
+│   │   ├── disaster_polling_task.py  # NWS alert polling task
+│   │   ├── wildfire_sync_task.py      # Wildfire sync task
+│   │   └── drought_sync_task.py       # Drought sync task
+│   ├── pollers/                     # Polling tools
+│   │   └── nws_polling_tool.py      # NWS polling tool
 ├── debug/                           # Debug scripts for local testing
 │   ├── railway_local.py            # Run full stack (Celery + FastAPI) ⭐ Recommended
 │   ├── task_direct.py              # Run task directly (no Celery)
@@ -203,7 +228,7 @@ quantagentic_api/
 │   └── launch.json                 # Debug launch configurations
 │   │   │   ├── vtec.py              # VTEC key generation
 │   │   │   ├── polygon.py           # Polygon overlap detection
-│   │   │   └── nws_event_types.py   # NWS event type codes
+│   │   │   └── event_types.py       # NWS event type codes
 │   │   └── disaster_polling_agent/  # Disaster polling crew
 │   │       ├── config/
 │   │       │   ├── agents.yaml      # Agent configuration
@@ -223,14 +248,23 @@ quantagentic_api/
 
 ## 🔌 API Endpoints
 
-### Events
-- `POST /events` - Create a new event
+### Events (NWS Alerts)
+- `GET /events` - List all events (supports `?active_only=true/false`)
 - `GET /events/{event_key}` - Get event by key
+- `POST /events` - Create a new event from NWS alert
 - `PUT /events/{event_key}` - Update event
+
+### Wildfires
+- `GET /wildfire` - List all wildfires (supports `?active_only=true/false`)
+- `GET /wildfire/{event_key}` - Get wildfire by event key
+
+### Droughts
+- `GET /drought` - List all drought events (supports `?active_only=true/false`)
+- `GET /drought/{event_key}` - Get drought event by event key
 
 ## 🤖 Background Workers
 
-### Disaster Polling Agent
+### Disaster Polling Agent (NWS Alerts)
 
 The disaster polling agent is a CrewAI-powered background worker that:
 
@@ -241,8 +275,40 @@ The disaster polling agent is a CrewAI-powered background worker that:
 5. **Classifies alerts** into:
    - `new_events` - New warnings to create
    - `updated_events` - Existing warnings to update
+6. **Manages event lifecycle** - Automatically completes events when alerts expire
 
 **See**: `app/crews/disaster_polling_agent/README.md` for detailed documentation.
+
+### Wildfire Sync Task
+
+The wildfire sync task automatically:
+
+1. **Polls ArcGIS API** for new and updated wildfires
+2. **Tracks active wildfires** - Type 1, 2, and 3 incidents
+3. **Manages wildfire lifecycle** using 3-tiered logic:
+   - Not officially out (`attr_FireOutDateTime` is None)
+   - Not 100% contained (`attr_PercentContained < 100`)
+   - Data is fresh (modified within configured staleness threshold)
+4. **Extracts comprehensive data**:
+   - Location (coordinates, shapes, FIPS codes)
+   - Severity (Type 1/2/3 incidents)
+   - Acres burned, cost, containment percentage
+   - Fuel sources and descriptions
+
+**Task**: `app.tasks.wildfire_sync_task` (runs on CeleryBeat schedule)
+
+### Drought Sync Task
+
+The drought sync task automatically:
+
+1. **Fetches current and previous week** drought monitor data
+2. **Compares county-level drought conditions** using polygon intersections
+3. **Creates drought events** when counties enter drought conditions
+4. **Updates severity** when drought conditions worsen
+5. **Completes drought events** when counties exit drought conditions
+6. **Uses Tuesday date logic** - Accounts for data publication schedule (Thursdays)
+
+**Task**: `app.tasks.drought_sync_task` (runs on CeleryBeat schedule)
 
 ## 🛠️ Development
 
@@ -266,31 +332,25 @@ pytest tests/test_nws_polling_tool.py
 
 This project uses snake_case naming conventions throughout.
 
-## ⚙️ Configuration
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `REDIS_HOST` | Redis host | `localhost` |
-| `REDIS_PORT` | Redis port | `6379` |
-| `REDIS_DB` | Redis database number | `0` |
-| `REDIS_PASSWORD` | Redis password (optional) | `None` |
-| `GEMINI_MODEL` | Gemini model to use | `gemini/gemini-3-pro-preview` |
-| `GEMINI_API_KEY` | Gemini API key | `test` |
-| `EXECUTOR_MAX_RETRIES` | Max retries for crew executors | `5` |
-| `NWS_USER_AGENT_NAME` | NWS User-Agent name | `quantagent_capital` |
-| `NWS_USER_AGENT_EMAIL` | NWS User-Agent email | `jacob@quantagent_capital.ai` |
-
 **Note**: Celery broker and result backend automatically use the same Redis instance configured above.
 
 ## 📝 Notes
+
+### Data Sources
+
+- **NWS Alerts**: Real-time weather alerts from National Weather Service API
+- **Wildfires**: ArcGIS API with ~36 hour delay (data from ~36 hours ago)
+- **Droughts**: US Drought Monitor data published on Thursdays for previous Tuesday
+
+### Technical Details
 
 - Redis data persists in a Docker volume (`redis_data`)
 - The API uses Pydantic models for request/response validation
 - All NWS API calls include the required User-Agent header
 - The shared state object (`app.state`) is accessible throughout the application
 - CrewAI tasks use structured Pydantic outputs for better agent memory and consistency
+- Wildfire data uses ArcGIS parser (`ArcGISWildfireParser`) for extracting and transforming feature data
+- Drought data uses Tuesday date logic to account for publication schedule
 
 ## 🔗 Useful Links
 

@@ -3,8 +3,8 @@ from typing import List, Optional
 from datetime import datetime
 from app.schemas.counties import County
 from app.schemas.event import Event
-from app.schemas.episode import Episode
 from app.schemas.drought import Drought
+from app.schemas.wildfire import Wildfire
 from app.redis_client import quantagent_redis
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,8 @@ class State:
 	REDIS_EPISODE_KEY_PREFIX = "episode:"
 	REDIS_COUNTY_KEY_PREFIX = "county:"
 	REDIS_DROUGHT_KEY_PREFIX = "drought:"
+	REDIS_WILDFIRE_KEY_PREFIX = "wildfire:"
+	REDIS_WILDFIRE_LAST_POLL_KEY = "wildfire:last_poll_date"
 	def __new__(cls):
 		if cls._instance is None:
 			cls._instance = super(State, cls).__new__(cls)
@@ -188,6 +190,109 @@ class State:
 		"""Get a drought by event_key."""
 		redis_key = f"{State.REDIS_DROUGHT_KEY_PREFIX}{event_key}"
 		return quantagent_redis.read_as_schema(redis_key, Drought, "drought")
+
+	@property
+	def wildfires(self) -> List[Wildfire]:
+		"""
+		Getter for wildfires.
+		Fetches all wildfires from Redis with prefix 'wildfire:'.
+		Usage: wildfires = state.wildfires
+		"""
+		wildfire_keys = quantagent_redis.get_all_keys(f"{State.REDIS_WILDFIRE_KEY_PREFIX}*")
+		# Filter out the last_poll_date key
+		wildfire_keys = [k for k in wildfire_keys if k != State.REDIS_WILDFIRE_LAST_POLL_KEY]
+		return quantagent_redis.read_all_as_schema(wildfire_keys, Wildfire, "wildfire")
+
+	@property
+	def active_wildfires(self) -> List[Wildfire]:
+		"""
+		Getter for active wildfires.
+		Fetches all wildfires from Redis and filters by active=True.
+		Usage: active_wildfires = state.active_wildfires
+		"""
+		all_wildfires = self.wildfires
+		return [wildfire for wildfire in all_wildfires if wildfire.active is True]
+
+	def add_wildfire(self, wildfire: Wildfire):
+		"""
+		Add a wildfire to both Redis and in-memory collection.
+		
+		Args:
+			wildfire: Wildfire object
+		"""
+		redis_key = f"{State.REDIS_WILDFIRE_KEY_PREFIX}{wildfire.event_key}"
+		quantagent_redis.create(redis_key, wildfire.to_dict())
+	
+	def remove_wildfire(self, event_key: str):
+		"""Remove a wildfire by event_key."""
+		redis_key = f"{State.REDIS_WILDFIRE_KEY_PREFIX}{event_key}"
+		quantagent_redis.delete(redis_key)
+
+	def update_wildfire(self, wildfire: Wildfire):
+		"""Update a wildfire in both Redis and in-memory collection."""
+		redis_key = f"{State.REDIS_WILDFIRE_KEY_PREFIX}{wildfire.event_key}"
+		quantagent_redis.update(redis_key, wildfire.to_dict())
+	
+	def wildfire_exists(self, event_key: str) -> bool:
+		"""
+		Check if a wildfire exists with the given event_key.
+		
+		Args:
+			event_key: Event key to check
+			
+		Returns:
+			True if a wildfire exists, False otherwise
+		"""
+		redis_key = f"{State.REDIS_WILDFIRE_KEY_PREFIX}{event_key}"
+		wildfire_dict = quantagent_redis.read_as_dict(redis_key, "wildfire")
+		return wildfire_dict is not None
+	
+	def get_wildfire(self, event_key: str) -> Optional[Wildfire]:
+		"""Get a wildfire by event_key."""
+		redis_key = f"{State.REDIS_WILDFIRE_KEY_PREFIX}{event_key}"
+		return quantagent_redis.read_as_schema(redis_key, Wildfire, "wildfire")
+	
+	def get_wildfire_by_arcgis_id(self, arcgis_id: str) -> Optional[Wildfire]:
+		"""
+		Get a wildfire by arcgis_id.
+		
+		Args:
+			arcgis_id: ArcGIS OBJECTID
+		
+		Returns:
+			Wildfire object if found, None otherwise
+		"""
+		all_wildfires = self.wildfires
+		for wildfire in all_wildfires:
+			if wildfire.arcgis_id == arcgis_id:
+				return wildfire
+		return None
+	
+	def get_wildfire_last_poll_date(self) -> Optional[datetime]:
+		"""
+		Get the last poll date for wildfires.
+		
+		Returns:
+			datetime object if found, None otherwise
+		"""
+		value = quantagent_redis.read(State.REDIS_WILDFIRE_LAST_POLL_KEY)
+		if value is None:
+			return None
+		# Value is stored as ISO format string from set_wildfire_last_poll_date
+		try:
+			return datetime.fromisoformat(value.replace('Z', '+00:00'))
+		except (ValueError, AttributeError):
+			logger.warning(f"Failed to parse wildfire last poll date: {value}")
+			return None
+	
+	def set_wildfire_last_poll_date(self, poll_date: datetime):
+		"""
+		Set the last poll date for wildfires.
+		
+		Args:
+			poll_date: datetime object representing the last poll date
+		"""
+		quantagent_redis.create(State.REDIS_WILDFIRE_LAST_POLL_KEY, poll_date.isoformat())
 
 # Global state instance
 state = State()

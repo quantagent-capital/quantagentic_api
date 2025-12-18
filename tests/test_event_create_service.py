@@ -8,7 +8,7 @@ from app.shared_models.nws_poller_models import FilteredNWSAlert
 from app.schemas.event import Event
 from app.schemas.location import Location, Coordinate
 from app.exceptions.base import ConflictError
-from app.utils.nws_event_types import NWS_WARNING_CODES
+from app.utils.event_types import NWS_WARNING_CODES
 
 class TestCreateEventFromAlert:
 	"""Test cases for EventCreateService.create_event_from_alert."""

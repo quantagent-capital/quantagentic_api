@@ -14,6 +14,7 @@ NWS_WARNING_CODES: Dict[str, str] = {
 	"DSW": "Dust Storm Warning",
 	"FFW": "Flash Flood Warning",
 	"FLW": "Flood Warning",
+	"FWW": "Fire Weather Warning",
 	"HWW": "High Wind Warning",
 	"HUW": "Hurricane Warning",
 	"SVR": "Severe Thunderstorm Warning",
@@ -50,6 +51,7 @@ NWS_WATCH_CODES: Dict[str, str] = {
 
 INTERNAL_EVENT_CODES: Dict[str, str] = {
 	"DRT": "Drought",
+	"WFR": "Wildfire",
 }
 
 # Combined set of all valid codes
@@ -66,7 +68,7 @@ def is_valid_event_code(code: str) -> bool:
 	Returns:
 		True if valid, False otherwise
 	"""
-	return code.upper() in ALL_NWS_EVENT_CODES
+	return code.upper() in ALL_EVENT_CODES
 
 
 def get_event_code_name(code: str) -> str:
