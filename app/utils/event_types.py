@@ -14,7 +14,7 @@ NWS_WARNING_CODES: Dict[str, str] = {
 	"DSW": "Dust Storm Warning",
 	"FFW": "Flash Flood Warning",
 	"FLW": "Flood Warning",
-	"FWW": "Fire WeatherWarning",
+	"FWW": "Fire Weather Warning",
 	"HWW": "High Wind Warning",
 	"HUW": "Hurricane Warning",
 	"SVR": "Severe Thunderstorm Warning",

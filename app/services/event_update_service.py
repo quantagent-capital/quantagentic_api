@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import List, Optional
-from app.utils.nws_event_types import NWS_WARNING_CODES
+from app.utils.event_types import NWS_WARNING_CODES
 from app.exceptions import NotFoundError
 from app.exceptions.base import ConflictError
 from app.schemas.event import Event

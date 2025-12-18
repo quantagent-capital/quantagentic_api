@@ -80,7 +80,7 @@ class TestProcessNewWildfires:
 
 
 class TestProcessWildfireUpdatesAndCompletion:
-	"""Test cases for WildfireProcessor._process_wildfire_updates_and_completion."""
+	"""Test cases for WildfireProcessor._handle_lifecycle."""
 	
 	@pytest.fixture
 	def sample_wildfire(self):
@@ -154,7 +154,7 @@ class TestProcessWildfireUpdatesAndCompletion:
 		updated_wildfire.event_key = "2025-TEST-001"
 		mock_crud.update_wildfire.return_value = updated_wildfire
 		
-		updated_count, completed_count = WildfireProcessor._process_wildfire_updates_and_completion(set())
+		updated_count, completed_count = WildfireProcessor._handle_lifecycle(set())
 		
 		assert updated_count == 1
 		assert completed_count == 0
@@ -202,7 +202,7 @@ class TestProcessWildfireUpdatesAndCompletion:
 		updated_wildfire.event_key = "2025-TEST-001"
 		mock_crud.update_wildfire.return_value = updated_wildfire
 		
-		updated_count, completed_count = WildfireProcessor._process_wildfire_updates_and_completion(set())
+		updated_count, completed_count = WildfireProcessor._handle_lifecycle(set())
 		
 		assert updated_count == 1
 		assert completed_count == 1  # Should be deactivated due to stale data
@@ -214,7 +214,7 @@ class TestProcessWildfireUpdatesAndCompletion:
 		"""Test processing with no active wildfires."""
 		mock_state.active_wildfires = []
 		
-		updated_count, completed_count = WildfireProcessor._process_wildfire_updates_and_completion(set())
+		updated_count, completed_count = WildfireProcessor._handle_lifecycle(set())
 		
 		assert updated_count == 0
 		assert completed_count == 0
@@ -234,7 +234,7 @@ class TestProcessWildfireUpdatesAndCompletion:
 		
 		new_event_keys = {"2025-TEST-001"}  # Same as sample_wildfire.event_key
 		
-		updated_count, completed_count = WildfireProcessor._process_wildfire_updates_and_completion(new_event_keys)
+		updated_count, completed_count = WildfireProcessor._handle_lifecycle(new_event_keys)
 		
 		assert updated_count == 0
 		assert completed_count == 0
@@ -244,7 +244,7 @@ class TestProcessWildfireUpdatesAndCompletion:
 class TestSyncWildfireData:
 	"""Test cases for WildfireProcessor.sync_wildfire_data."""
 	
-	@patch('app.processors.wildfire_processor.WildfireProcessor._process_wildfire_updates_and_completion')
+	@patch('app.processors.wildfire_processor.WildfireProcessor._handle_lifecycle')
 	@patch('app.processors.wildfire_processor.WildfireProcessor._process_new_wildfires')
 	@patch('app.processors.wildfire_processor.state')
 	def test_sync_wildfire_data_success(self, mock_state, mock_process_new, mock_process_updates):
@@ -263,7 +263,7 @@ class TestSyncWildfireData:
 		mock_process_updates.assert_called_once()
 		mock_state.set_wildfire_last_poll_date.assert_called_once()
 	
-	@patch('app.processors.wildfire_processor.WildfireProcessor._process_wildfire_updates_and_completion')
+	@patch('app.processors.wildfire_processor.WildfireProcessor._handle_lifecycle')
 	@patch('app.processors.wildfire_processor.WildfireProcessor._process_new_wildfires')
 	@patch('app.processors.wildfire_processor.state')
 	def test_sync_wildfire_data_with_last_poll_date(self, mock_state, mock_process_new, mock_process_updates):

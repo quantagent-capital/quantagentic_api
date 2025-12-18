@@ -9,6 +9,9 @@ class Wildfire(BaseSchema):
 	
 	Data Freshness Note:
 	--------------------
+	The API has a delay of ~36 hours.
+
+	E.g., 
 	If you query the API at Noon on Tuesday, you are usually looking at exactly 
 	where the fire was at Midnight on Monday.
 	"""

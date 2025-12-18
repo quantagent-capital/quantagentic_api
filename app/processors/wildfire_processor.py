@@ -37,7 +37,7 @@ class WildfireProcessor:
 		logger.info(f"Created {created_count} new wildfires")
 
 		# Step 2 & 3: Poll for updates and determine active status for existing wildfires
-		updated_count, completed_count = WildfireProcessor._process_wildfire_updates_and_completion(new_event_keys)
+		updated_count, completed_count = WildfireProcessor._handle_lifecycle(new_event_keys)
 		logger.info(f"Updated {updated_count} wildfires and completed {completed_count} wildfires")
 
 		# Update last poll date
@@ -86,10 +86,9 @@ class WildfireProcessor:
 		return created_count, new_event_keys
 	
 	@staticmethod
-	def _process_wildfire_updates_and_completion(new_event_keys: set) -> tuple[int, int]:
+	def _handle_lifecycle(new_event_keys: set) -> tuple[int, int]:
 		"""
-		Step 2 & 3: Poll for updates and determine active status for existing active wildfires.
-		Combines both operations to avoid duplicate API calls.
+		Step 2 & 3: Poll for updates and determine active status for active wildfires.
 		
 		Args:
 			new_event_keys: Set of event keys that were just created (to skip)
@@ -97,7 +96,7 @@ class WildfireProcessor:
 		Returns:
 			Tuple of (updated_count, completed_count)
 		"""
-		logger.info("Step 2 & 3: Polling for updates and determining active status for active wildfires...")
+		logger.info("Polling for updates and determining active status for active wildfires...")
 		updated_count = 0
 		completed_count = 0
 		
@@ -144,21 +143,8 @@ class WildfireProcessor:
 					logger.error(traceback.format_exc())
 					continue
 				
-				# Apply 3-tiered logic for active status (completion logic)
-				# A. Not officially out
-				fire_out_datetime = properties.get("attr_FireOutDateTime")
-				is_not_out = fire_out_datetime is None
-				
-				# B. Not 100% Contained (Handle NULLs as active/0%)
-				percent_contained = properties.get("attr_PercentContained")
-				is_not_fully_contained = (percent_contained is None or percent_contained < 100)
-				
-				# C. Data is fresh (Modified within last 14 days)
-				modified_timestamp_ms = properties.get("attr_ModifiedOnDateTime_dt")
-				is_fresh = modified_timestamp_ms is not None and modified_timestamp_ms >= staleness_threshold
-				
-				# Determine if should be active
-				should_be_active = is_not_out and is_not_fully_contained and is_fresh
+				# Determine active status and complete if needed
+				should_be_active = WildfireProcessor._determine_active_status(properties, staleness_threshold)
 				
 				# Update active status if changed (only deactivate, never reactivate)
 				# Use updated_wildfire to check current active status
@@ -214,3 +200,35 @@ class WildfireProcessor:
 		except Exception as e:
 			logger.error(f"Error polling for wildfire updates: {str(e)}")
 			raise
+	
+	@staticmethod
+	def _determine_active_status(properties: Dict, staleness_threshold: int) -> bool:
+		"""
+		Determine if a wildfire should be active based on 3-tiered logic.
+		
+		Args:
+			properties: Feature properties dictionary from ArcGIS API
+			staleness_threshold: Timestamp threshold in milliseconds (data older than this is stale)
+		
+		Returns:
+			True if wildfire should be active, False otherwise
+		
+		Logic:
+			A. Not officially out (attr_FireOutDateTime is None)
+			B. Not 100% Contained (attr_PercentContained is None or < 100)
+			C. Data is fresh (attr_ModifiedOnDateTime_dt >= staleness_threshold)
+		"""
+		# A. Not officially out
+		fire_out_datetime = properties.get("attr_FireOutDateTime")
+		is_not_out = fire_out_datetime is None
+		
+		# B. Not 100% Contained (Handle NULLs as active/0%)
+		percent_contained = properties.get("attr_PercentContained")
+		is_not_fully_contained = (percent_contained is None or percent_contained < 100)
+		
+		# C. Data is fresh (Modified within last 14 days)
+		modified_timestamp_ms = properties.get("attr_ModifiedOnDateTime_dt")
+		is_fresh = modified_timestamp_ms is not None and modified_timestamp_ms >= staleness_threshold
+		
+		# Determine if should be active
+		return is_not_out and is_not_fully_contained and is_fresh

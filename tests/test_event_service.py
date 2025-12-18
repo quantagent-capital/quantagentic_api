@@ -11,7 +11,7 @@ from app.schemas.event import Event
 from app.schemas.location import Location, Coordinate
 from app.exceptions import NotFoundError
 from app.exceptions.base import ConflictError
-from app.utils.nws_event_types import NWS_WARNING_CODES
+from app.utils.event_types import NWS_WARNING_CODES
 
 
 class TestCreateEventFromAlert:
