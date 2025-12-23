@@ -82,3 +82,18 @@ async def get_active_event_counts_by_type():
 	"""
 	return EventService.get_active_event_counts_by_type()
 
+@router.post("/confirm/{event_key}", status_code=status.HTTP_200_OK)
+@handle_service_exceptions
+async def confirm_event(event_key: str):
+	"""
+	Confirm whether an event occurred by running the confirmation crew.
+	
+	Args:
+		event_key: The event key to confirm
+	
+	Returns:
+		Result from the confirmation crew execution
+	"""
+	result = await EventService.confirm_event(event_key)
+	return result
+

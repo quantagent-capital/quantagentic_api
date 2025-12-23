@@ -2,13 +2,13 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from app.utils.event_types import NWS_WARNING_CODES
 from app.exceptions import NotFoundError
-from app.exceptions.base import ConflictError
 from app.schemas.event import Event
 from app.schemas.location import Location
 from app.shared_models.nws_poller_models import FilteredNWSAlert
 from app.state import state
 from app.utils.datetime_utils import parse_datetime_to_utc
 from app.services.event_crud_service import EventCRUDService
+from app.utils.vtec import extract_office_from_vtec
 import logging
 
 logger = logging.getLogger(__name__)
@@ -120,6 +120,8 @@ class EventUpdateService:
 		confirmed = existing_event.confirmed
 		if updateable_alert.certainty and updateable_alert.certainty.lower() == "observed":
 			confirmed = True
+		# Extract office from raw_vtec
+		office = extract_office_from_vtec(updateable_alert.raw_vtec)
 		return Event(
 			event_key=updateable_alert.key,
 			nws_alert_id=updateable_alert.alert_id,  # Always use new alert_id
@@ -135,6 +137,7 @@ class EventUpdateService:
 			is_active=existing_event.is_active,  # Preserve is_active status
 			confirmed=confirmed,
 			raw_vtec=updateable_alert.raw_vtec,
+			office=office,
 			property_damage=existing_event.property_damage,  # Preserve these fields
 			crops_damage=existing_event.crops_damage,
 			range_miles=existing_event.range_miles,
@@ -165,6 +168,9 @@ class EventUpdateService:
 		if updateable_alert.certainty and updateable_alert.certainty.lower() == "observed":
 			confirmed = True
 		
+		# Extract office from raw_vtec
+		office = extract_office_from_vtec(updateable_alert.raw_vtec) or existing_event.office
+		
 		return Event(
 			event_key=existing_event.event_key,
 			nws_alert_id=updateable_alert.alert_id,  # Always use new alert_id
@@ -180,6 +186,7 @@ class EventUpdateService:
 			is_active=existing_event.is_active,
 			confirmed=confirmed,
 			raw_vtec=updateable_alert.raw_vtec,  # Update raw_vtec
+			office=office,
 			property_damage=existing_event.property_damage,
 			crops_damage=existing_event.crops_damage,
 			range_miles=existing_event.range_miles,
