@@ -41,6 +41,10 @@ celery_app.conf.beat_schedule = {
 		"task": "app.tasks.wildfire_sync_task",
 		"schedule": crontab(hour=13, minute=30),  # 8:30 AM EST / 9:30 AM EDT (13:30 UTC)
 	},
+	"events-confirmation": {
+		"task": "app.tasks.events_confirmation_task",
+		"schedule": schedule(run_every=timedelta(hours=1)),  # Every hour
+	},
 }
 
 celery_app.conf.timezone = "UTC"
@@ -50,4 +54,5 @@ celery_app.conf.timezone = "UTC"
 import app.tasks.disaster_polling_task  # noqa: F401
 import app.tasks.drought_sync_task  # noqa: F401
 import app.tasks.wildfire_sync_task  # noqa: F401
+import app.tasks.events_confirmation_task  # noqa: F401
 

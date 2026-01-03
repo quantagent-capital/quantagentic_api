@@ -15,10 +15,11 @@ class Location(BaseSchema):
 	state_fips: str
 	county_fips: str
 	ugc_code: str
-	shape: Optional[List[Coordinate]] = None
+	shape: Optional[List[Coordinate]] = None # Deprecated
 	full_shape: Optional[List[List[Coordinate]]] = None
 	full_zone_ugc_endpoint: str
 	starting_point: Optional[Coordinate] = None  # Optional starting point (e.g., for wildfires)
+	observed_coordinate: Optional[Coordinate] = None  # Observed coordinate from LSR that is within proximity of the full shape
 
 	@staticmethod
 	def parse_fips(full_fips: Optional[str]) -> tuple[str, str]:

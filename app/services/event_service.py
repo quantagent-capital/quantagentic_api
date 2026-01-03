@@ -5,6 +5,7 @@ from app.services.event_crud_service import EventCRUDService
 from app.services.event_create_service import EventCreateService
 from app.services.event_update_service import EventUpdateService
 from app.services.event_completion_service import EventCompletionService
+from app.services.event_confirmation_service import EventConfirmationService
 
 
 class EventService:
@@ -56,3 +57,14 @@ class EventService:
 	def check_completed_events():
 		"""Check for completed events that should be marked as inactive."""
 		return EventCompletionService.check_completed_events()
+	
+	# Confirmation Operations - delegate to EventConfirmationService
+	@staticmethod
+	async def confirm_event(event: Event):
+		"""Confirm whether an event occurred by running the confirmation crew."""
+		return await EventConfirmationService.confirm_event(event)
+	
+	@staticmethod
+	async def confirm_events():
+		"""Confirm all active and unconfirmed events."""
+		return await EventConfirmationService.confirm_events()

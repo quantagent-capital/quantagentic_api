@@ -5,6 +5,25 @@ from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 
 
+def extract_office_from_vtec(vtec_string: str) -> Optional[str]:
+	"""
+	Extract office code from a VTEC string.
+	
+	Args:
+		vtec_string: Raw VTEC string (e.g., "/O.NEW.KSBY.TO.W.0015.251212T2203Z-251212T2300Z/")
+		
+	Returns:
+		Office code string (e.g., "KSBY") or None if not found
+	"""
+	try:
+		parts = vtec_string.strip("/").split(".")
+		if len(parts) >= 3:
+			return parts[2]  # e.g., "KSBY"
+		return None
+	except (ValueError, IndexError):
+		return None
+
+
 def extract_vtec_key(alert_properties: Dict[str, Any]) -> Optional[str]:
 	"""
 	Extract VTEC key from NWS alert properties.

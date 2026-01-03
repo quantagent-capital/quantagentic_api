@@ -77,13 +77,13 @@ class State:
 
 	@property
 	def active_events(self) -> List[Event]:
-		"""
-		Getter for active events.
-		Fetches all events from Redis and filters by is_active=True.
-		Usage: active_events = state.active_events
-		"""
 		all_events = self.events
 		return [event for event in all_events if event.is_active is True]
+	
+	@property
+	def active_and_unconfirmed_events(self) -> List[Event]:
+		all_events = self.events
+		return [event for event in all_events if event.is_active is True and not event.confirmed]
 
 	def add_event(self, event: Event):
 		"""

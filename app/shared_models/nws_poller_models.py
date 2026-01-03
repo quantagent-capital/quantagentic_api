@@ -39,4 +39,14 @@ class ClassifiedAlertsOutput(BaseModel):
 		description="List of existing events (warnings) that need to be updated"
 	)
 	total_classified: int = Field(description="Total number of classified alerts")
+
+
+class FilteredLSR(BaseModel):
+	"""Filtered Local Storm Report from NWS API."""
+	fully_qualified_url: str = Field(description="Fully qualified URL for the LSR")
+	lsr_id: str = Field(description="Unique identifier for the LSR")
+	office: str = Field(description="NWS office code (e.g., KMTR)")
+	wmo_collective: str = Field(description="WMO collective ID (e.g., NWUS56)")
+	reported_at: str = Field(description="Issuance time in ISO format")
+	description: str = Field(description="Product text containing City, LAT/LON, County, Remarks")
 	

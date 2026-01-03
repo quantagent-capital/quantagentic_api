@@ -5,6 +5,7 @@ from app.schemas.event import Event
 from app.shared_models.nws_poller_models import FilteredNWSAlert
 from app.state import state
 from app.utils.datetime_utils import parse_datetime_to_utc
+from app.utils.vtec import extract_office_from_vtec
 import logging
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,8 @@ class EventCreateService:
 				raise ConflictError(f"Event with key: `{alert.key}` already exists, did we misclassify the alert?")
 			# Set confirmed=True if certainty is "observed" (case-insensitive)
 			confirmed = alert.certainty.lower() == "observed" if alert.certainty else False
+			# Extract office from raw_vtec
+			office = extract_office_from_vtec(alert.raw_vtec)
 			event = Event(
 				event_key=alert.key,
 				nws_alert_id=alert.alert_id,
@@ -47,6 +50,7 @@ class EventCreateService:
 				is_active=True,
 				confirmed=confirmed,
 				raw_vtec=alert.raw_vtec,
+				office=office,
 				previous_ids=[]
 			)
 			state.add_event(event)
