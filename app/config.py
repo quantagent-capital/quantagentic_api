@@ -50,6 +50,9 @@ class Settings:
 	
 	# Wildfire ArcGIS API configuration
 	wildfire_arcgis_base_url: str = os.getenv("WILDFIRE_ARCGIS_BASE_URL", "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters/FeatureServer/0/query")
+	
+	# Event confirmation parallel processing configuration
+	event_confirmation_max_concurrent: int = int(os.getenv("EVENT_CONFIRMATION_MAX_CONCURRENT", "5"))
 
 	@property
 	def default_llm(self) -> LLM:

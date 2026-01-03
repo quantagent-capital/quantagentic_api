@@ -4,6 +4,7 @@ from app.exceptions.base import ConflictError
 from app.schemas.event import Event
 from app.shared_models.nws_poller_models import FilteredNWSAlert
 from app.services.event_service import EventService
+from app.tasks.events_confirmation_task import events_confirmation_task
 from app.exceptions import handle_service_exceptions, NotFoundError
 import logging
 router = APIRouter(prefix="/events", tags=["events"])
@@ -94,6 +95,28 @@ async def confirm_event(event_key: str):
 	Returns:
 		Result from the confirmation crew execution
 	"""
-	result = await EventService.confirm_event(event_key)
+	event = EventService.get_event(event_key)
+	if event is None:
+		raise NotFoundError("Event", event_key)
+	result = await EventService.confirm_event(event)
 	return result
+
+@router.post("/confirm", status_code=status.HTTP_202_ACCEPTED)
+@handle_service_exceptions
+async def confirm_events():
+	"""
+	Confirm all active and unconfirmed events.
+	
+	This endpoint returns immediately and processes the confirmation asynchronously in the background.
+	
+	Returns:
+		Dictionary with message and task ID
+	"""
+	task = events_confirmation_task.delay()
+	logger.info(f"Started events confirmation task with ID: {task.id}")
+	return {
+		"message": "Events confirmation task started",
+		"task_id": task.id,
+		"status": "processing"
+	}
 

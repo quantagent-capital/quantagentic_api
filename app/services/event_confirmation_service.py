@@ -1,11 +1,14 @@
 """
 Service for event confirmation operations.
 """
-from typing import Any
-from app.services.event_crud_service import EventCRUDService
+from typing import Any, List, Dict, Optional
+import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from app.schemas.event import Event
 from app.http_client.nws_client import NWSClient
 from app.crews.event_confirmation_crew.executor import EventConfirmationExecutor
 from app.state import state
+from app.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -15,27 +18,28 @@ class EventConfirmationService:
 	"""Service for Event confirmation operations."""
 	
 	@staticmethod
-	async def confirm_event(event_key: str) -> Any:
+	async def confirm_event(event: Event) -> Any:
 		"""
 		Confirm whether an event occurred by running the confirmation crew.
 
 		Algorithm:
-		1. Get the event from the database
-		2. Get the LSRs for the event's office
-		3. Process each LSR to collect observed coordinates
-		4. If any observed coordinates are found, confirm the event and save all the observed locations
+		1. Get the LSRs for the event's office
+		2. Process each LSR to collect observed coordinates
+		3. If any observed coordinates are found, confirm the event and save all the observed locations
 		
 		Args:
-			event_key: The event key to confirm
+			event: The Event object to confirm
 		
 		Returns:
 			Result from the confirmation crew execution
 		"""
-		# Verify event exists
-		event = EventCRUDService.get_event(event_key)
-		if event is None:
-			raise ValueError(f"Event with key {event_key} not found")
+		event_key = event.event_key
 		
+		# Check if event is already confirmed
+		if event.confirmed:
+			logger.info(f"Event {event_key} is already confirmed, skipping confirmation")
+			return {"message": "Event already confirmed", "lsrs_processed": 0}
+
 		# Extract office from event
 		office = event.office
 		if not office:
@@ -43,7 +47,7 @@ class EventConfirmationService:
 
 		# Fetch LSRs asynchronously
 		nws_client = NWSClient()
-		lsrs = await nws_client.get_lsr_by_office(office)
+		lsrs = await nws_client.get_lsr(office, event.start_date)
 		
 		# If no LSRs found, return early
 		if not lsrs:
@@ -52,12 +56,12 @@ class EventConfirmationService:
 		
 		logger.info(f"Found {len(lsrs)} LSRs for office {office}, starting confirmation for event {event_key}")
 		
-		# Process all LSRs to collect observed coordinates
-		results = []
-		all_observed_locations = []
-		event_confirmed = False
+		# Process LSRs until we get a confirmation, then short circuit
+		lsrs_processed = 0
+		confirmed_coordinate = None
 		
 		for lsr in lsrs:
+			lsrs_processed += 1
 			# Create executor and run the crew for each LSR
 			executor = EventConfirmationExecutor()
 			result = executor.execute(
@@ -66,33 +70,142 @@ class EventConfirmationService:
 				issuing_office=lsr.office
 			)
 
-			# Collect results and observed locations
-			if result.pydantic:
-				results.append(result)
-				if result.pydantic.confirmed:
-					event_confirmed = True
-				if result.pydantic.observed_locations:
-					all_observed_locations.extend(result.pydantic.observed_locations)
+			# Check if we got a confirmation
+			if result.pydantic and result.pydantic.confirmed:
+				confirmed_coordinate = result.pydantic.observed_coordinate
+				logger.info(f"Event {event_key} confirmed with coordinate ({confirmed_coordinate.latitude}, {confirmed_coordinate.longitude})")
+				
+				# Set observed_coordinate for all locations in the event
+				for location in event.locations:
+					location.observed_coordinate = confirmed_coordinate
+				
+				# Mark event as confirmed and update
+				event.confirmed = True
+				state.update_event(event)
+				
+				# Short circuit - exit the loop
+				break
 		
-		if event_confirmed:
-			event.confirmed = True
-			event.observed_coordinates = all_observed_locations
-			state.update_event(event)
+		if confirmed_coordinate:
+			logger.info(f"Confirmation completed for event {event_key}, processed {lsrs_processed} LSRs before confirmation")
+		else:
+			logger.info(f"Confirmation completed for event {event_key}, processed {len(lsrs)} LSRs, no confirmation found")
 
-		logger.info(f"Confirmation completed for event {event_key}, processed {len(lsrs)} LSRs, found {len(all_observed_locations)} observed coordinates")
 		return {
-			"lsrs_processed": len(lsrs),
-			"confirmed": event_confirmed,
-			"num_observed_locations": len(all_observed_locations),
-			"observed_locations": all_observed_locations
+			"lsrs_processed": lsrs_processed if confirmed_coordinate else len(lsrs),
+			"confirmed": confirmed_coordinate is not None,
+			"observed_coordinate": confirmed_coordinate
 		}
-
-
-# TODO, we are here. 
-# We need to test the confirmation stack (service, crew, tool).
-# We need to save all observed locations for the event based on this stack.
-# From there, if all checks out, for events that are not confirmed, we should spawn another crew
-# The new crew will use serper dev and other tools to find the event in the news, and confirm the event based on the event.dsecriptions vs newssight.description. 
-# From there, ensure that updates dont override the confirmed status. 
-# Also, the FE should account for observed locations by placing something on the map exactly where they are. 
-# We should consider parallelizing the confirmation stack. It doesnt seem necessary honestly. But consider it again.
+	
+	@staticmethod
+	async def confirm_events(max_concurrent: Optional[int] = None) -> Dict[str, Any]:
+		"""
+		Confirm all active and unconfirmed events in parallel using ThreadPoolExecutor.
+		
+		Algorithm:
+		1. Get all active and unconfirmed events from state
+		2. Process events in parallel with configurable concurrency limit using ThreadPoolExecutor
+		3. Return summary of results
+		
+		Args:
+			max_concurrent: Maximum number of concurrent confirmations (defaults to settings value)
+		
+		Returns:
+			Dictionary with summary of confirmation results
+		"""
+		# Get all active and unconfirmed events
+		events_to_confirm = state.active_and_unconfirmed_events
+		
+		if not events_to_confirm:
+			logger.info("No active and unconfirmed events to process")
+			return {
+				"events_processed": 0,
+				"events_confirmed": 0,
+				"events_failed": 0,
+				"message": "No events to confirm"
+			}
+		
+		# Use provided max_concurrent or default from settings
+		concurrency_limit = max_concurrent or settings.event_confirmation_max_concurrent
+		
+		logger.info(f"Starting parallel confirmation for {len(events_to_confirm)} active and unconfirmed events (max concurrent: {concurrency_limit})")
+		
+		def confirm_event_sync(event: Event) -> Dict[str, Any]:
+			"""
+			Synchronous wrapper function that runs the async confirm_event in a new event loop.
+			
+			Args:
+				event: Event to confirm
+			
+			Returns:
+				Dictionary with event_key and result/error information
+			"""
+			try:
+				# Create a new event loop for this thread
+				loop = asyncio.new_event_loop()
+				asyncio.set_event_loop(loop)
+				try:
+					result = loop.run_until_complete(EventConfirmationService.confirm_event(event))
+					return {
+						"event_key": event.event_key,
+						"confirmed": result.get("confirmed", False),
+						"lsrs_processed": result.get("lsrs_processed", 0),
+						"error": None
+					}
+				finally:
+					loop.close()
+			except Exception as e:
+				logger.error(f"Error confirming event {event.event_key}: {str(e)}")
+				return {
+					"event_key": event.event_key,
+					"confirmed": False,
+					"lsrs_processed": 0,
+					"error": str(e)
+				}
+		
+		# Use ThreadPoolExecutor to run confirmations in parallel
+		results = []
+		total_events = len(events_to_confirm)
+		completed_count = 0
+		
+		with ThreadPoolExecutor(max_workers=concurrency_limit) as executor:
+			# Submit all tasks to the executor
+			future_to_event = {
+				executor.submit(confirm_event_sync, event): event 
+				for event in events_to_confirm
+			}
+			
+			# Collect results as they complete
+			for future in as_completed(future_to_event):
+				completed_count += 1
+				try:
+					result = future.result()
+					results.append(result)
+					
+					# Log progress
+					status = "confirmed" if result.get("confirmed", False) else "not confirmed"
+					logger.info(f"Thread progress: {completed_count}/{total_events} completed - Event {result.get('event_key')} {status}")
+				except Exception as e:
+					event = future_to_event[future]
+					logger.error(f"Unexpected error in thread for event {event.event_key}: {str(e)}")
+					results.append({
+						"event_key": event.event_key,
+						"confirmed": False,
+						"lsrs_processed": 0,
+						"error": str(e)
+					})
+					logger.info(f"Thread progress: {completed_count}/{total_events} completed - Event {event.event_key} failed")
+		
+		# Calculate summary statistics
+		events_confirmed = sum(1 for r in results if r.get("confirmed", False))
+		events_failed = sum(1 for r in results if r.get("error") is not None)
+		
+		logger.info(f"Confirmation batch completed: {events_confirmed} confirmed, {events_failed} failed out of {len(events_to_confirm)} total")
+		
+		return {
+			"events_processed": len(events_to_confirm),
+			"events_confirmed": events_confirmed,
+			"events_failed": events_failed,
+			"max_concurrent": concurrency_limit,
+			"results": results
+		}

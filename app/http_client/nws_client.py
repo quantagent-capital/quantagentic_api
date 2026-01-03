@@ -1,4 +1,5 @@
 from typing import Optional, Dict, Any, List
+from datetime import datetime
 from app.http_client.base_client import BaseHTTPClient
 from app.config import settings
 from app.shared_models.nws_poller_models import FilteredLSR
@@ -38,7 +39,7 @@ class NWSClient(BaseHTTPClient):
 		"""
 		return await self.get(f"/alerts/{alert_id}")
 	
-	async def get_lsr_by_office(self, office: str) -> List[FilteredLSR]:
+	async def get_lsr(self, office: str, start: datetime) -> List[FilteredLSR]:
 		"""
 		Get Local Storm Reports (LSR) for a specific NWS office.
 		
@@ -48,6 +49,7 @@ class NWSClient(BaseHTTPClient):
 		
 		Args:
 			office: NWS office code (e.g., "KSBY"). The leading "K" will be stripped if present.
+			start: Optional datetime to filter LSRs by start date. Will be formatted as ISO8601.
 		
 		Returns:
 			List of FilteredLSR objects with full product details
@@ -58,6 +60,8 @@ class NWSClient(BaseHTTPClient):
 			"type": "LSR",
 			"location": location
 		}
+		
+		params["start"] = start.isoformat()
 		
 		# Initial request to get list of LSR products
 		initial_response = await self.get("/products", params=params)

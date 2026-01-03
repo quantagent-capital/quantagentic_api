@@ -18,8 +18,8 @@ class EventLocationConfirmationCrew:
 		self.confirm_event_location_tool = ConfirmEventLocationTool()
 		self.researcher = Agent(
 			role='Senior Disaster Event Researcher',
-			goal='Search the web for high-quality information and extract content.',
-			backstory='You are an expert disaster researcher who is able to determine if an event occurred or not.',
+			goal='Confirm whether an event occurred based on the LSR description and coordinates.',
+			backstory='You are an expert disaster researcher who has extensive experience modeling disaster events.',
 			verbose=True,
 			allow_delegation=False,
 			llm=settings.default_llm
@@ -30,26 +30,25 @@ class EventLocationConfirmationCrew:
 			Analyze the LSR description and extract the latitude and longitude coordinates.
 			Here is the description: {description}
 			Look for coordinate patterns like "40.32N 121.00W" or "LAT.LON" format in the description text.
-			Example: "1100 AM     Flood            Westwood                40.32N 121.00W" contains coordinates 40.32N, 121.00W.
-			If you cannot find any valid coordinates, return latitude=0.0 and longitude=0.0.
+			Example: "1100 AM     Flood            Westwood                40.32N 121.00W" contains coordinates 40.32, 121.00.
 			""",
 			agent=self.researcher,
-			expected_output="A structured output with latitude and longitude coordinates",
-			output_json=CoordinateExtractionOutput
+			output_pydantic=CoordinateExtractionOutput,
+			expected_output="A CoordinateExtractionOutput with latitude and longitude coordinates",
 		)
 
 		self.confirm_location_task = Task(
 			description="""
 			First, ensure you have the coordinates from the previous task and the event_key from the inputs.
-			Next, call the confirm_event_location tool with:
+			Next, call the confirm_event_location_tool with:
 			- event_key: {event_key} The event key from the inputs dictionary
 			- latitude: The latitude from extract_coordinates_task.output.latitude
 			- longitude: The longitude from extract_coordinates_task.output.longitude
 			The tool will check if these coordinates are contained within the specified event's polygons.
 			""",
 			agent=self.researcher,
+			output_pydantic=EventConfirmationOutput,
 			expected_output="A structured EventConfirmationOutput",
-			output_json=EventConfirmationOutput,
 			tools=[self.confirm_event_location_tool],
 			context=[self.extract_coordinates_task]
 		)

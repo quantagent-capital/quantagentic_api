@@ -60,6 +60,11 @@ class EventService:
 	
 	# Confirmation Operations - delegate to EventConfirmationService
 	@staticmethod
-	async def confirm_event(event_key: str):
+	async def confirm_event(event: Event):
 		"""Confirm whether an event occurred by running the confirmation crew."""
-		return await EventConfirmationService.confirm_event(event_key)
+		return await EventConfirmationService.confirm_event(event)
+	
+	@staticmethod
+	async def confirm_events():
+		"""Confirm all active and unconfirmed events."""
+		return await EventConfirmationService.confirm_events()

@@ -19,8 +19,7 @@ class Location(BaseSchema):
 	full_shape: Optional[List[List[Coordinate]]] = None
 	full_zone_ugc_endpoint: str
 	starting_point: Optional[Coordinate] = None  # Optional starting point (e.g., for wildfires)
-	confirmed_location: Optional[List[Coordinate]] = None  # Confirmed location coordinates from LSR
-	observed_coordinates: Optional[List[Coordinate]] = None  # Observed coordinates from LSR that are within proximity of the full shape
+	observed_coordinate: Optional[Coordinate] = None  # Observed coordinate from LSR that is within proximity of the full shape
 
 	@staticmethod
 	def parse_fips(full_fips: Optional[str]) -> tuple[str, str]:
