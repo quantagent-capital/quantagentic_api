@@ -47,7 +47,7 @@ class WindValidationAgent:
 		self.crew = Crew(
 			agents=[self.validator],
 			tasks=[self.validation_task],
-			verbose=True
+			verbose=False
 		)
 	
 	def validate(self, headline: str, description: str) -> WindValidationOutput:

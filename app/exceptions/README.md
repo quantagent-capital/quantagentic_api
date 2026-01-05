@@ -8,6 +8,7 @@ All custom exceptions inherit from `QuantAgentException`:
 
 - **`NotFoundError`**: Resource not found (HTTP 404)
 - **`ValidationError`**: Validation failed (HTTP 400)
+- **`ConflictError`**: Resource conflict (HTTP 409)
 - **`ServiceError`**: Service operation failed (HTTP 500, customizable)
 
 ## Usage in Service Layer
@@ -15,7 +16,7 @@ All custom exceptions inherit from `QuantAgentException`:
 Service classes can raise custom exceptions that will be automatically converted to appropriate HTTP responses:
 
 ```python
-from app.exceptions import NotFoundError, ValidationError, ServiceError
+from app.exceptions import NotFoundError, ValidationError, ConflictError, ServiceError
 
 class EventService:
     @staticmethod

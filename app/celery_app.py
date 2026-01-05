@@ -35,7 +35,7 @@ celery_app.conf.update(
 celery_app.conf.beat_schedule = {
 	"disaster-polling-agent": {
 		"task": "app.tasks.disaster_polling_task",
-		"schedule": schedule(run_every=timedelta(minutes=5)),  # Every 5 minutes, runs immediately on startup
+		"schedule": schedule(run_every=timedelta(minutes=15)),  # Every 15 minutes, runs immediately on startup
 	},
 	"wildfire-sync": {
 		"task": "app.tasks.wildfire_sync_task",

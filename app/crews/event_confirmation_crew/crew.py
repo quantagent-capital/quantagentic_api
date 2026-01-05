@@ -20,7 +20,7 @@ class EventLocationConfirmationCrew:
 			role='Senior Disaster Event Researcher',
 			goal='Confirm whether an event occurred based on the LSR description and coordinates.',
 			backstory='You are an expert disaster researcher who has extensive experience modeling disaster events.',
-			verbose=True,
+			verbose=False,
 			allow_delegation=False,
 			llm=settings.default_llm
 		)
@@ -57,7 +57,7 @@ class EventLocationConfirmationCrew:
 		self.crew = Crew(
 			agents=[self.researcher],
 			tasks=[self.extract_coordinates_task, self.confirm_location_task],
-			verbose=True
+			verbose=False
 		)
 	
 	def kickoff(self, inputs: Dict[str, Any]) -> Any:

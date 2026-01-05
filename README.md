@@ -29,6 +29,7 @@ A FastAPI-based API for managing disaster events with AI agents powered by CrewA
 - **Shared state management** for API and agents
 - **Automated Background Workers**:
   - **Disaster Polling Agent** - Processes NWS alerts every 5 minutes
+  - **Event Confirmation Task** - Confirms events using Local Storm Reports (LSRs)
   - **Wildfire Sync Task** - Syncs wildfire data from ArcGIS API
   - **Drought Sync Task** - Syncs drought data from US Drought Monitor
 - **VTEC Key Generation** for unique alert identification
@@ -104,6 +105,8 @@ A FastAPI-based API for managing disaster events with AI agents powered by CrewA
    - `EXECUTOR_MAX_RETRIES` - Max retries for executors (default: `5`)
    - `NWS_USER_AGENT_NAME` - NWS User-Agent name (default: `quantagent_capital`)
    - `NWS_USER_AGENT_EMAIL` - NWS User-Agent email (default: `jacob@quantagent_capital.ai`)
+   - `WIND_SPEED_THRESHOLD_MPH` - Wind speed threshold for HWW validation (default: `65`)
+   - `EVENT_CONFIRMATION_MAX_CONCURRENT` - Max concurrent event confirmations (default: `5`)
 
 6. **Run the API server**:
    
@@ -126,9 +129,10 @@ A FastAPI-based API for managing disaster events with AI agents powered by CrewA
    ```
    
    This starts both the Celery worker and the CeleryBeat scheduler. Background tasks will run on their configured schedules:
-   - **Disaster Polling Agent**: Every 5 minutes
-   - **Wildfire Sync Task**: As configured in CeleryBeat schedule
-   - **Drought Sync Task**: As configured in CeleryBeat schedule
+   - **Disaster Polling Agent**: Every 15 minutes
+   - **Event Confirmation Task**: Every hour
+   - **Wildfire Sync Task**: Daily at 8:30 AM EST / 9:30 AM EDT (13:30 UTC)
+   - **Drought Sync Task**: Manual trigger only (via API endpoint)
    
    **Viewing Task Output:**
    - The task will log detailed output to the console with `INFO` level logging
@@ -139,6 +143,7 @@ A FastAPI-based API for managing disaster events with AI agents powered by CrewA
    - To manually trigger tasks for testing:
      ```bash
      celery -A app.celery_app call app.tasks.disaster_polling_task
+     celery -A app.celery_app call app.tasks.events_confirmation_task
      celery -A app.celery_app call app.tasks.wildfire_sync_task
      celery -A app.celery_app call app.tasks.drought_sync_task
      ```
@@ -205,40 +210,36 @@ quantagentic_api/
 │   │   ├── datetime_utils.py        # Datetime utilities
 │   │   ├── event_types.py          # NWS event type codes
 │   │   └── vtec.py                  # VTEC key generation
+│   ├── agents/                      # CrewAI agents (single-agent tasks)
+│   │   ├── wind_validation_agent.py  # Wind validation agent for HWW events
+│   │   └── models.py                 # Agent output models
 │   ├── crews/                       # CrewAI crews and shared resources
 │   │   ├── base_executor.py         # Base executor with retry logic
-│   │   ├── tools/                   # Shared CrewAI tools
-│   │   │   ├── nws_polling_tool.py
-│   │   │   ├── state_tool.py
-│   │   │   └── forecast_zone_tool.py
-│   │   ├── utils/                   # Shared utilities
+│   │   ├── event_confirmation_crew/  # Event confirmation crew
+│   │   │   ├── crew.py              # Crew definition
+│   │   │   ├── executor.py          # Executor with retry logic
+│   │   │   ├── models.py            # Structured Pydantic outputs
+│   │   │   └── tools/               # Crew-specific tools
+│   │   │       └── event_confirmation_tool.py
+│   │   └── tools/                   # Shared CrewAI tools
 │   ├── tasks/                       # Celery tasks
 │   │   ├── disaster_polling_task.py  # NWS alert polling task
+│   │   ├── events_confirmation_task.py  # Event confirmation task
 │   │   ├── wildfire_sync_task.py      # Wildfire sync task
 │   │   └── drought_sync_task.py       # Drought sync task
 │   ├── pollers/                     # Polling tools
 │   │   └── nws_polling_tool.py      # NWS polling tool
+│   └── exceptions/                  # Custom exception classes
+│       ├── base.py                  # Base exception classes
+│       └── handler.py               # Exception handlers
 ├── debug/                           # Debug scripts for local testing
 │   ├── railway_local.py            # Run full stack (Celery + FastAPI) ⭐ Recommended
 │   ├── task_direct.py              # Run task directly (no Celery)
 │   ├── test_setup.py               # Verify debug setup
 │   └── README.md                   # Debugging guide
-├── tests/                           # Unit and integration tests
+├── tests/                           # Unit and integration tests (see tests/README.md)
 ├── .vscode/                         # VS Code/Cursor IDE debug configurations
 │   └── launch.json                 # Debug launch configurations
-│   │   │   ├── vtec.py              # VTEC key generation
-│   │   │   ├── polygon.py           # Polygon overlap detection
-│   │   │   └── event_types.py       # NWS event type codes
-│   │   └── disaster_polling_agent/  # Disaster polling crew
-│   │       ├── config/
-│   │       │   ├── agents.yaml      # Agent configuration
-│   │       │   └── tasks.yaml       # Task definitions
-│   │       ├── crew.py               # Crew definition (@CrewBase)
-│   │       ├── executor.py           # Executor with retry logic
-│   │       └── models.py             # Structured Pydantic outputs
-│   └── tasks/                        # Celery tasks
-│       └── disaster_polling_task.py
-├── tests/                            # Unit tests (see tests/README.md)
 ├── main.py                           # FastAPI application entry point
 ├── requirements.txt                  # Python dependencies
 ├── docker-compose.yml                # Redis Docker setup
@@ -251,16 +252,23 @@ quantagentic_api/
 ### Events (NWS Alerts)
 - `GET /events` - List all events (supports `?active_only=true/false`)
 - `GET /events/{event_key}` - Get event by key
+- `GET /events/{event_key}/has_episode` - Check if event has an associated episode
+- `GET /events/stats/counts-by-type` - Get count of active events grouped by event type
 - `POST /events` - Create a new event from NWS alert
 - `PUT /events/{event_key}` - Update event
+- `POST /events/{event_key}/deactivate` - Deactivate an event (sets `is_active=False` and `actual_end_date` to now)
+- `POST /events/confirm/{event_key}` - Confirm a specific event using LSR data
+- `POST /events/confirm` - Confirm all active and unconfirmed events (runs asynchronously)
 
 ### Wildfires
 - `GET /wildfire` - List all wildfires (supports `?active_only=true/false`)
 - `GET /wildfire/{event_key}` - Get wildfire by event key
+- `POST /wildfire/sync` - Manually trigger wildfire sync (runs asynchronously)
 
 ### Droughts
 - `GET /drought` - List all drought events (supports `?active_only=true/false`)
 - `GET /drought/{event_key}` - Get drought event by event key
+- `POST /drought/sync` - Manually trigger drought sync (runs asynchronously)
 
 ## 🤖 Background Workers
 
@@ -268,16 +276,33 @@ quantagentic_api/
 
 The disaster polling agent is a CrewAI-powered background worker that:
 
-1. **Polls NWS API** every 5 minutes for active alerts
+1. **Polls NWS API** every 15 minutes for active alerts
 2. **Filters alerts** by severity, urgency, certainty, and event type
-3. **Creates VTEC keys** for unique identification
-4. **Verifies keys** to ensure data quality
-5. **Classifies alerts** into:
+3. **Filters out FWW events** - Fire Weather Warnings are handled elsewhere
+4. **Validates HWW events** - High Wind Warnings are validated using `WindValidationAgent` to ensure wind speed meets threshold (default 65 MPH)
+5. **Creates VTEC keys** for unique identification
+6. **Verifies keys** to ensure data quality
+7. **Classifies alerts** into:
    - `new_events` - New warnings to create
    - `updated_events` - Existing warnings to update
-6. **Manages event lifecycle** - Automatically completes events when alerts expire
+8. **Manages event lifecycle** - Automatically completes events when alerts expire
 
 **See**: `app/crews/disaster_polling_agent/README.md` for detailed documentation.
+
+### Event Confirmation Task
+
+The event confirmation task automatically confirms events using Local Storm Reports (LSRs):
+
+1. **Fetches LSRs** from NWS API for each active and unconfirmed event
+2. **Filters LSRs** using smart polling - only processes new LSRs (tracks polled LSR IDs)
+3. **Uses CrewAI crew** to extract coordinates from LSR descriptions
+4. **Validates coordinates** against event polygon boundaries
+5. **Sets observed coordinates** on specific event locations based on confirmation results
+6. **Processes all LSRs** - no short-circuit, allows multiple confirmations per event
+7. **Marks LSRs as polled** only after successful processing (exceptions don't mark as polled)
+8. **Sets observed coordinates** on specific event locations based on `location_index` from each confirmation
+
+**Task**: `app.tasks.events_confirmation_task` (runs every hour via CeleryBeat schedule)
 
 ### Wildfire Sync Task
 
