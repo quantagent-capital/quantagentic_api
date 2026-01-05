@@ -53,6 +53,9 @@ class Settings:
 	
 	# Event confirmation parallel processing configuration
 	event_confirmation_max_concurrent: int = int(os.getenv("EVENT_CONFIRMATION_MAX_CONCURRENT", "5"))
+	
+	# Wind validation configuration
+	wind_speed_threshold_mph: int = int(os.getenv("WIND_SPEED_THRESHOLD_MPH", "65"))
 
 	@property
 	def default_llm(self) -> LLM:

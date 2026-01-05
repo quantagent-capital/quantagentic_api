@@ -40,6 +40,11 @@ class EventService:
 		"""Get count of active events grouped by event type."""
 		return EventCRUDService.get_active_event_counts_by_type()
 
+	@staticmethod
+	def deactivate_event(event_key: str) -> Event:
+		"""Deactivate an event by setting is_active=False and actual_end_date to current time."""
+		return EventCRUDService.deactivate_event(event_key)
+
 	# Create Operations - delegate to EventCreateService
 	@staticmethod
 	def create_event_from_alert(alert: FilteredNWSAlert) -> Event:

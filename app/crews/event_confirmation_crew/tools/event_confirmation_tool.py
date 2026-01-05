@@ -47,17 +47,17 @@ class ConfirmEventLocationTool(BaseTool):
 		event = state.get_event(event_key)
 		if event is None:
 			logger.warning(f"Event {event_key} not found")
-			return EventConfirmationOutput(confirmed=False, observed_coordinate=None)
+			return EventConfirmationOutput(confirmed=False, observed_coordinate=None, location_index=None)
 		
 		# Validate coordinates - check for None or exactly (0.0, 0.0)
 		if latitude is None or longitude is None or (latitude == 0.0 and longitude == 0.0):
 			logger.info("Invalid coordinates provided (None or all zeros)")
-			return EventConfirmationOutput(confirmed=False, observed_coordinate=None)
+			return EventConfirmationOutput(confirmed=False, observed_coordinate=None, location_index=None)
 		
 		# Validate coordinate ranges
 		if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
 			logger.warning(f"Coordinates out of valid range: lat={latitude}, lon={longitude}")
-			return EventConfirmationOutput(confirmed=False, observed_coordinate=None)
+			return EventConfirmationOutput(confirmed=False, observed_coordinate=None, location_index=None)
 		
 		if longitude > 0:
 			longitude = -longitude
@@ -69,7 +69,7 @@ class ConfirmEventLocationTool(BaseTool):
 		logger.info(f"Checking event {event_key} for coordinate ({latitude}, {longitude})")
 		
 		# Loop through all locations for this event
-		for location in event.locations:
+		for location_index, location in enumerate(event.locations):
 			if not location.full_shape:
 				continue
 			
@@ -112,12 +112,12 @@ class ConfirmEventLocationTool(BaseTool):
 					
 					logger.info(f"Polygon checks - intersects: {intersects}, contains: {contains}, touches: {touches}")
 					
-					if intersects:
-						logger.info(f"Coordinate ({latitude}, {longitude}) found in event {event.event_key}, location {location.ugc_code}")
-						return EventConfirmationOutput(confirmed=True, observed_coordinate=observed_coordinate)
+					if intersects or contains or touches:
+						logger.info(f"Coordinate ({latitude}, {longitude}) found in event {event.event_key}, location {location.ugc_code} at index {location_index}")
+						return EventConfirmationOutput(confirmed=True, observed_coordinate=observed_coordinate, location_index=location_index)
 				except Exception as e:
 					logger.warning(f"Error creating polygon or checking containment for event {event.event_key}, location {location.ugc_code}: {str(e)}")
 					logger.info(f"Polygon points: {polygon_points[:5]}... (showing first 5)")
 					continue
 		
-		return EventConfirmationOutput(confirmed=False, observed_coordinate=None)
+		return EventConfirmationOutput(confirmed=False, observed_coordinate=None, location_index=None)

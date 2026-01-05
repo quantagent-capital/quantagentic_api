@@ -120,3 +120,21 @@ async def confirm_events():
 		"status": "processing"
 	}
 
+@router.post("/{event_key}/deactivate", response_model=Event, status_code=status.HTTP_200_OK)
+@handle_service_exceptions
+async def deactivate_event(event_key: str):
+	"""
+	Deactivate an event by setting is_active=False and actual_end_date to current time.
+	
+	Args:
+		event_key: The event key to deactivate
+	
+	Returns:
+		Deactivated Event object with is_active=False and actual_end_date set to now
+	"""
+	event = EventService.get_event(event_key)
+	if event is None:
+		raise NotFoundError("Event", event_key)
+	deactivated_event = EventService.deactivate_event(event_key)
+	return deactivated_event
+

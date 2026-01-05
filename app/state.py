@@ -42,6 +42,7 @@ class State:
 	REDIS_DROUGHT_KEY_PREFIX = "drought:"
 	REDIS_WILDFIRE_KEY_PREFIX = "wildfire:"
 	REDIS_WILDFIRE_LAST_POLL_KEY = "wildfire:last_poll_date"
+	REDIS_LSR_KEY_PREFIX = "polled_lsr:"
 	def __new__(cls):
 		if cls._instance is None:
 			cls._instance = super(State, cls).__new__(cls)
@@ -84,6 +85,40 @@ class State:
 	def active_and_unconfirmed_events(self) -> List[Event]:
 		all_events = self.events
 		return [event for event in all_events if event.is_active is True and not event.confirmed]
+	
+	@property
+	def polled_lsr_ids(self) -> List[str]:
+		"""
+		Getter for polled LSR IDs.
+		Fetches all polled LSR IDs from Redis with prefix 'polled_lsr:'.
+		Usage: polled_ids = state.polled_lsr_ids
+		"""
+		lsr_keys = quantagent_redis.get_all_keys(f"{State.REDIS_LSR_KEY_PREFIX}*")
+		# Extract IDs from keys (format: "polled_lsr:{lsr_id}")
+		return [key.replace(State.REDIS_LSR_KEY_PREFIX, "") for key in lsr_keys]
+	
+	def add_polled_lsr_id(self, lsr_id: str):
+		"""
+		Add a polled LSR ID to Redis.
+		
+		Args:
+			lsr_id: LSR ID to mark as polled
+		"""
+		redis_key = f"{State.REDIS_LSR_KEY_PREFIX}{lsr_id}"
+		quantagent_redis.create(redis_key, "1")  # Store a simple marker
+	
+	def is_lsr_polled(self, lsr_id: str) -> bool:
+		"""
+		Check if an LSR ID has been polled.
+		
+		Args:
+			lsr_id: LSR ID to check
+		
+		Returns:
+			True if LSR has been polled, False otherwise
+		"""
+		redis_key = f"{State.REDIS_LSR_KEY_PREFIX}{lsr_id}"
+		return quantagent_redis.read(redis_key) is not None
 
 	def add_event(self, event: Event):
 		"""

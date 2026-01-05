@@ -16,3 +16,4 @@ class EventConfirmationOutput(BaseModel):
 	"""Structured output for event confirmation task."""
 	confirmed: bool = Field(description="Whether the event was confirmed.")
 	observed_coordinate: Optional[Coordinate] = Field(description="Observed coordinate from LSR that is within proximity of the event's polygons.", default=None)
+	location_index: Optional[int] = Field(description="Index of the location in event.locations where the coordinate was found. None if not confirmed.", default=None)

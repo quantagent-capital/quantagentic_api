@@ -705,3 +705,268 @@ class TestEventCreationProcessor:
 		
 		# Should call update_event_from_alert
 		mock_event_service.update_event_from_alert.assert_called_once_with(sample_alert)
+	
+	def test_filter_fww_events(self, processor, mock_state, mock_event_service):
+		"""Test that FWW (Fire Weather Warning) events are filtered out."""
+		fww_alert = FilteredNWSAlert(
+			alert_id="fww-alert-1",
+			key="FWW-KEY-001",
+			event_type="FWW",
+			message_type="NEW",
+			is_watch=False,
+			is_warning=True,
+			severity="Moderate",
+			urgency="Expected",
+			certainty="Likely",
+			effective="2024-01-15T10:00:00Z",
+			sent_at="2024-01-15T10:00:00Z",
+			raw_vtec="",
+			affected_zones_ugc_endpoints=[],
+			affected_zones_raw_ugc_codes=[],
+			referenced_alerts=[],
+			locations=[]
+		)
+		normal_alert = FilteredNWSAlert(
+			alert_id="normal-alert-1",
+			key="TOR-KEY-001",
+			event_type="TOR",
+			message_type="NEW",
+			is_watch=False,
+			is_warning=True,
+			severity="Extreme",
+			urgency="Immediate",
+			certainty="Observed",
+			effective="2024-01-15T10:00:00Z",
+			sent_at="2024-01-15T10:00:00Z",
+			raw_vtec="",
+			affected_zones_ugc_endpoints=[],
+			affected_zones_raw_ugc_codes=[],
+			referenced_alerts=[],
+			locations=[]
+		)
+		
+		mock_event = Mock(spec=Event)
+		mock_event.event_key = "TOR-KEY-001"
+		mock_event_service.create_event_from_alert.return_value = mock_event
+		
+		processor.process([fww_alert, normal_alert])
+		
+		# Should only process the normal alert, not the FWW
+		mock_event_service.create_event_from_alert.assert_called_once_with(normal_alert)
+	
+	def test_filter_fww_events_case_insensitive(self, processor, mock_state, mock_event_service):
+		"""Test that FWW filtering is case-insensitive."""
+		fww_alert_lower = FilteredNWSAlert(
+			alert_id="fww-alert-1",
+			key="FWW-KEY-001",
+			event_type="fww",  # lowercase
+			message_type="NEW",
+			is_watch=False,
+			is_warning=True,
+			severity="Moderate",
+			urgency="Expected",
+			certainty="Likely",
+			effective="2024-01-15T10:00:00Z",
+			sent_at="2024-01-15T10:00:00Z",
+			raw_vtec="",
+			affected_zones_ugc_endpoints=[],
+			affected_zones_raw_ugc_codes=[],
+			referenced_alerts=[],
+			locations=[]
+		)
+		
+		processor.process([fww_alert_lower])
+		
+		# Should not create any events
+		mock_event_service.create_event_from_alert.assert_not_called()
+	
+	@patch('app.processors.event_creation_processor.WindValidationAgent')
+	def test_hww_validation_valid_wind_speed(self, mock_wind_agent_class, processor, mock_state, mock_event_service):
+		"""Test that HWW events with valid wind speeds are created."""
+		from app.agents.models import WindValidationOutput
+		
+		hww_alert = FilteredNWSAlert(
+			alert_id="hww-alert-1",
+			key="HWW-KEY-001",
+			event_type="HWW",
+			message_type="NEW",
+			is_watch=False,
+			is_warning=True,
+			severity="Moderate",
+			urgency="Expected",
+			certainty="Likely",
+			effective="2024-01-15T10:00:00Z",
+			sent_at="2024-01-15T10:00:00Z",
+			headline="High Wind Warning",
+			description="Sustained winds of 70 mph expected",
+			raw_vtec="",
+			affected_zones_ugc_endpoints=[],
+			affected_zones_raw_ugc_codes=[],
+			referenced_alerts=[],
+			locations=[]
+		)
+		
+		# Mock the wind validation agent
+		mock_wind_agent = Mock()
+		mock_wind_agent.validate.return_value = WindValidationOutput(valid=True)
+		mock_wind_agent_class.return_value = mock_wind_agent
+		
+		# Reinitialize processor to get the mocked agent
+		processor.wind_validation_agent = mock_wind_agent
+		
+		mock_event = Mock(spec=Event)
+		mock_event.event_key = "HWW-KEY-001"
+		mock_event_service.create_event_from_alert.return_value = mock_event
+		
+		processor.process([hww_alert])
+		
+		# Should validate and then create the event
+		mock_wind_agent.validate.assert_called_once_with(
+			headline="High Wind Warning",
+			description="Sustained winds of 70 mph expected"
+		)
+		mock_event_service.create_event_from_alert.assert_called_once_with(hww_alert)
+	
+	@patch('app.processors.event_creation_processor.WindValidationAgent')
+	def test_hww_validation_invalid_wind_speed(self, mock_wind_agent_class, processor, mock_state, mock_event_service):
+		"""Test that HWW events with invalid wind speeds are skipped."""
+		from app.agents.models import WindValidationOutput
+		
+		hww_alert = FilteredNWSAlert(
+			alert_id="hww-alert-1",
+			key="HWW-KEY-001",
+			event_type="HWW",
+			message_type="NEW",
+			is_watch=False,
+			is_warning=True,
+			severity="Moderate",
+			urgency="Expected",
+			certainty="Likely",
+			effective="2024-01-15T10:00:00Z",
+			sent_at="2024-01-15T10:00:00Z",
+			headline="High Wind Warning",
+			description="Sustained winds of 50 mph expected",
+			raw_vtec="",
+			affected_zones_ugc_endpoints=[],
+			affected_zones_raw_ugc_codes=[],
+			referenced_alerts=[],
+			locations=[]
+		)
+		
+		# Mock the wind validation agent
+		mock_wind_agent = Mock()
+		mock_wind_agent.validate.return_value = WindValidationOutput(valid=False)
+		mock_wind_agent_class.return_value = mock_wind_agent
+		
+		# Reinitialize processor to get the mocked agent
+		processor.wind_validation_agent = mock_wind_agent
+		
+		processor.process([hww_alert])
+		
+		# Should validate but not create the event
+		mock_wind_agent.validate.assert_called_once_with(
+			headline="High Wind Warning",
+			description="Sustained winds of 50 mph expected"
+		)
+		mock_event_service.create_event_from_alert.assert_not_called()
+	
+	@patch('app.processors.event_creation_processor.WindValidationAgent')
+	def test_hww_validation_error_handling(self, mock_wind_agent_class, processor, mock_state, mock_event_service):
+		"""Test that HWW validation errors cause the event to be skipped."""
+		hww_alert = FilteredNWSAlert(
+			alert_id="hww-alert-1",
+			key="HWW-KEY-001",
+			event_type="HWW",
+			message_type="NEW",
+			is_watch=False,
+			is_warning=True,
+			severity="Moderate",
+			urgency="Expected",
+			certainty="Likely",
+			effective="2024-01-15T10:00:00Z",
+			sent_at="2024-01-15T10:00:00Z",
+			headline="High Wind Warning",
+			description="Sustained winds expected",
+			raw_vtec="",
+			affected_zones_ugc_endpoints=[],
+			affected_zones_raw_ugc_codes=[],
+			referenced_alerts=[],
+			locations=[]
+		)
+		
+		# Mock the wind validation agent to raise an error
+		mock_wind_agent = Mock()
+		mock_wind_agent.validate.side_effect = Exception("Validation error")
+		mock_wind_agent_class.return_value = mock_wind_agent
+		
+		# Reinitialize processor to get the mocked agent
+		processor.wind_validation_agent = mock_wind_agent
+		
+		processor.process([hww_alert])
+		
+		# Should attempt validation but not create the event
+		mock_wind_agent.validate.assert_called_once()
+		mock_event_service.create_event_from_alert.assert_not_called()
+	
+	@patch('app.processors.event_creation_processor.WindValidationAgent')
+	def test_hww_validation_with_none_headline_description(self, mock_wind_agent_class, processor, mock_state, mock_event_service):
+		"""Test that HWW validation handles None headline/description by converting to empty strings."""
+		from app.agents.models import WindValidationOutput
+		
+		hww_alert = FilteredNWSAlert(
+			alert_id="hww-alert-1",
+			key="HWW-KEY-001",
+			event_type="HWW",
+			message_type="NEW",
+			is_watch=False,
+			is_warning=True,
+			severity="Moderate",
+			urgency="Expected",
+			certainty="Likely",
+			effective="2024-01-15T10:00:00Z",
+			sent_at="2024-01-15T10:00:00Z",
+			headline=None,
+			description=None,
+			raw_vtec="",
+			affected_zones_ugc_endpoints=[],
+			affected_zones_raw_ugc_codes=[],
+			referenced_alerts=[],
+			locations=[]
+		)
+		
+		# Mock the wind validation agent
+		mock_wind_agent = Mock()
+		mock_wind_agent.validate.return_value = WindValidationOutput(valid=True)
+		mock_wind_agent_class.return_value = mock_wind_agent
+		
+		# Reinitialize processor to get the mocked agent
+		processor.wind_validation_agent = mock_wind_agent
+		
+		mock_event = Mock(spec=Event)
+		mock_event.event_key = "HWW-KEY-001"
+		mock_event_service.create_event_from_alert.return_value = mock_event
+		
+		processor.process([hww_alert])
+		
+		# Should validate with empty strings
+		mock_wind_agent.validate.assert_called_once_with(
+			headline="",
+			description=""
+		)
+		mock_event_service.create_event_from_alert.assert_called_once_with(hww_alert)
+	
+	def test_non_hww_events_not_validated(self, processor, sample_alert, mock_state, mock_event_service):
+		"""Test that non-HWW events are not validated."""
+		# Mock the wind validation agent
+		mock_wind_agent = Mock()
+		processor.wind_validation_agent = mock_wind_agent
+		
+		mock_event = Mock(spec=Event)
+		mock_event.event_key = sample_alert.key
+		mock_event_service.create_event_from_alert.return_value = mock_event
+		
+		processor.process([sample_alert])
+		
+		# Should not call validation for non-HWW events
+		mock_wind_agent.validate.assert_not_called()
+		mock_event_service.create_event_from_alert.assert_called_once_with(sample_alert)

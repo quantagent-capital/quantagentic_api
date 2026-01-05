@@ -1,7 +1,8 @@
 """
 Service for event confirmation operations.
 """
-from typing import Any, List, Dict, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from app.schemas.event import Event
@@ -47,54 +48,83 @@ class EventConfirmationService:
 
 		# Fetch LSRs asynchronously
 		nws_client = NWSClient()
-		lsrs = await nws_client.get_lsr(office, event.start_date)
+		all_lsrs = await nws_client.get_lsr(office, event.start_date)
 		
 		# If no LSRs found, return early
-		if not lsrs:
+		if not all_lsrs:
 			logger.info(f"No LSRs found for office {office}, skipping confirmation")
 			return {"message": "No LSRs found", "lsrs_processed": 0}
 		
-		logger.info(f"Found {len(lsrs)} LSRs for office {office}, starting confirmation for event {event_key}")
+		# Filter to only process new LSRs (smart polling)
+		new_lsrs = [lsr for lsr in all_lsrs if not state.is_lsr_polled(lsr.lsr_id)]
 		
-		# Process LSRs until we get a confirmation, then short circuit
+		if len(new_lsrs) < len(all_lsrs):
+			logger.info(f"Filtered {len(all_lsrs)} LSRs to {len(new_lsrs)} new LSRs (skipped {len(all_lsrs) - len(new_lsrs)} already polled)")
+		
+		if not new_lsrs:
+			logger.info(f"All LSRs for office {office} have already been polled, skipping confirmation")
+			return {"message": "All LSRs already polled", "lsrs_processed": 0}
+		
+		logger.info(f"Found {len(new_lsrs)} new LSRs for office {office}, starting confirmation for event {event_key}")
+		
+		# Process all LSRs (no short-circuit)
 		lsrs_processed = 0
-		confirmed_coordinate = None
+		confirmed_count = 0
+		last_confirmed_coordinate = None
 		
-		for lsr in lsrs:
-			lsrs_processed += 1
-			# Create executor and run the crew for each LSR
-			executor = EventConfirmationExecutor()
-			result = executor.execute(
-				event_key,
-				description=lsr.description,
-				issuing_office=lsr.office
-			)
+		for lsr in new_lsrs:
+			try:
+				# Create executor and run the crew for each LSR
+				executor = EventConfirmationExecutor()
+				result = executor.execute(
+					event_key,
+					description=lsr.description,
+					issuing_office=lsr.office
+				)
 
-			# Check if we got a confirmation
-			if result.pydantic and result.pydantic.confirmed:
-				confirmed_coordinate = result.pydantic.observed_coordinate
-				logger.info(f"Event {event_key} confirmed with coordinate ({confirmed_coordinate.latitude}, {confirmed_coordinate.longitude})")
+				# Check if we got a confirmation
+				if result.pydantic and result.pydantic.confirmed:
+					confirmed_coordinate = result.pydantic.observed_coordinate
+					confirmed_location_index = result.pydantic.location_index
+					confirmed_count += 1
+					last_confirmed_coordinate = confirmed_coordinate
+					
+					logger.info(f"Event {event_key} confirmed with coordinate ({confirmed_coordinate.latitude}, {confirmed_coordinate.longitude}) at location index {confirmed_location_index}")
+					
+					# Set observed_coordinate for the specific location where confirmation occurred
+					if confirmed_location_index is not None and 0 <= confirmed_location_index < len(event.locations):
+						event.locations[confirmed_location_index].observed_coordinate = confirmed_coordinate
+						logger.info(f"Set observed_coordinate on location index {confirmed_location_index} (ugc_code: {event.locations[confirmed_location_index].ugc_code})")
+					else:
+						logger.warning(f"Invalid location_index {confirmed_location_index} for event {event_key} with {len(event.locations)} locations")
+					
+					# Mark event as confirmed and update (update after each confirmation to persist all coordinates)
+					event.confirmed = True
+					event.updated_at = datetime.now(timezone.utc)
+					state.update_event(event)
 				
-				# Set observed_coordinate for all locations in the event
-				for location in event.locations:
-					location.observed_coordinate = confirmed_coordinate
+				# Mark LSR as polled after successful processing (only if no exception occurred)
+				state.add_polled_lsr_id(lsr.lsr_id)
+				lsrs_processed += 1
 				
-				# Mark event as confirmed and update
-				event.confirmed = True
-				state.update_event(event)
-				
-				# Short circuit - exit the loop
-				break
+			except Exception as e:
+				# Log error but continue processing remaining LSRs
+				logger.error(f"Error processing LSR {lsr.lsr_id} for event {event_key}: {str(e)}")
+				import traceback
+				logger.error(traceback.format_exc())
+				# Don't mark as polled if processing failed
+				continue
 		
-		if confirmed_coordinate:
-			logger.info(f"Confirmation completed for event {event_key}, processed {lsrs_processed} LSRs before confirmation")
+		if confirmed_count > 0:
+			logger.info(f"Confirmation completed for event {event_key}, processed {lsrs_processed} LSRs, found {confirmed_count} confirmation(s)")
 		else:
-			logger.info(f"Confirmation completed for event {event_key}, processed {len(lsrs)} LSRs, no confirmation found")
+			logger.info(f"Confirmation completed for event {event_key}, processed {lsrs_processed} LSRs, no confirmation found")
 
 		return {
-			"lsrs_processed": lsrs_processed if confirmed_coordinate else len(lsrs),
-			"confirmed": confirmed_coordinate is not None,
-			"observed_coordinate": confirmed_coordinate
+			"lsrs_processed": lsrs_processed,
+			"confirmed": confirmed_count > 0,
+			"observed_coordinate": last_confirmed_coordinate,
+			"confirmations_count": confirmed_count
 		}
 	
 	@staticmethod
