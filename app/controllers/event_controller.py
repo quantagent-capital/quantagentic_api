@@ -4,6 +4,7 @@ from app.exceptions.base import ConflictError
 from app.schemas.event import Event
 from app.shared_models.nws_poller_models import FilteredNWSAlert
 from app.services.event_service import EventService
+from app.tasks.events_confirmation_task import events_confirmation_task
 from app.exceptions import handle_service_exceptions, NotFoundError
 import logging
 router = APIRouter(prefix="/events", tags=["events"])
@@ -81,4 +82,59 @@ async def get_active_event_counts_by_type():
 		Example: {"Flood Warning": 5, "Tornado Warning": 2}
 	"""
 	return EventService.get_active_event_counts_by_type()
+
+@router.post("/confirm/{event_key}", status_code=status.HTTP_200_OK)
+@handle_service_exceptions
+async def confirm_event(event_key: str):
+	"""
+	Confirm whether an event occurred by running the confirmation crew.
+	
+	Args:
+		event_key: The event key to confirm
+	
+	Returns:
+		Result from the confirmation crew execution
+	"""
+	event = EventService.get_event(event_key)
+	if event is None:
+		raise NotFoundError("Event", event_key)
+	result = await EventService.confirm_event(event)
+	return result
+
+@router.post("/confirm", status_code=status.HTTP_202_ACCEPTED)
+@handle_service_exceptions
+async def confirm_events():
+	"""
+	Confirm all active and unconfirmed events.
+	
+	This endpoint returns immediately and processes the confirmation asynchronously in the background.
+	
+	Returns:
+		Dictionary with message and task ID
+	"""
+	task = events_confirmation_task.delay()
+	logger.info(f"Started events confirmation task with ID: {task.id}")
+	return {
+		"message": "Events confirmation task started",
+		"task_id": task.id,
+		"status": "processing"
+	}
+
+@router.post("/{event_key}/deactivate", response_model=Event, status_code=status.HTTP_200_OK)
+@handle_service_exceptions
+async def deactivate_event(event_key: str):
+	"""
+	Deactivate an event by setting is_active=False and actual_end_date to current time.
+	
+	Args:
+		event_key: The event key to deactivate
+	
+	Returns:
+		Deactivated Event object with is_active=False and actual_end_date set to now
+	"""
+	event = EventService.get_event(event_key)
+	if event is None:
+		raise NotFoundError("Event", event_key)
+	deactivated_event = EventService.deactivate_event(event_key)
+	return deactivated_event
 

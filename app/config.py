@@ -1,5 +1,6 @@
 import os
 from typing import Optional
+from crewai import LLM
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -49,6 +50,19 @@ class Settings:
 	
 	# Wildfire ArcGIS API configuration
 	wildfire_arcgis_base_url: str = os.getenv("WILDFIRE_ARCGIS_BASE_URL", "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters/FeatureServer/0/query")
+	
+	# Event confirmation parallel processing configuration
+	event_confirmation_max_concurrent: int = int(os.getenv("EVENT_CONFIRMATION_MAX_CONCURRENT", "5"))
+	
+	# Wind validation configuration
+	wind_speed_threshold_mph: int = int(os.getenv("WIND_SPEED_THRESHOLD_MPH", "65"))
+
+	@property
+	def default_llm(self) -> LLM:
+		return LLM(
+			model=self.gemini_model,
+			api_key=self.gemini_api_key
+		)
 
 	@property           
 	def quantagentic_api_url(self) -> str:

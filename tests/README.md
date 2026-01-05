@@ -37,6 +37,8 @@ pytest -v
 ```bash
 pytest tests/test_nws_polling_tool.py
 pytest tests/test_event_service.py
+pytest tests/test_event_confirmation_service.py
+pytest tests/test_event_creation_processor.py
 ```
 
 **Run specific test class:**
@@ -91,37 +93,40 @@ pytest -k "create"       # Run all tests with "create" in the name
 
 ### Current Test Files
 
-1. **test_nws_polling_tool.py** (10 tests)
-   - Tests NWS API polling functionality (`poll()` and `_async_poll()`)
-   - Tests successful polling with proper response handling
-   - Tests alert filtering by event type
-   - Tests 304 Not Modified response handling
-   - Tests VTEC field inclusion in filtered alerts
-   - Tests empty response handling
-   - Tests error handling and RuntimeError propagation
-   - Tests warning/watch filtering
-   - Tests location extraction from alerts
+The test suite includes **19 test files** covering all major components:
 
-2. **test_event_service.py** (17 tests)
-   - Tests `create_event_from_alert()` method:
-     - Successful event creation from alert
-     - Handling missing optional dates
-     - Conflict error when event already exists
-     - Unknown event type handling
-     - Field preservation and mapping
-   - Tests `update_event_from_alert()` method:
-     - Standard update (CON message type) - merges locations and updates fields
-     - COR (Correction) message type - replaces entire event
-     - UPG (Update) message type - replaces entire event
-     - CAN (Cancel) message type - marks event as inactive
-     - EXP (Expired) message type - marks event as inactive
-     - Location merging without duplicates
-     - Previous ID tracking
-     - Case-insensitive message type handling
-     - Missing expected_end handling
-     - NotFoundError handling
+1. **test_nws_polling_tool.py** - NWS API polling functionality
+2. **test_event_service.py** - Event service facade methods
+3. **test_event_create_service.py** - Event creation logic
+4. **test_event_update_service.py** - Event update logic
+5. **test_event_crud_service.py** - Event CRUD operations
+6. **test_event_service_facade.py** - Service facade delegation
+7. **test_event_creation_processor.py** - Event creation processor (includes FWW filtering and HWW validation)
+8. **test_event_completion_service.py** - Event completion logic
+9. **test_event_confirmation_service.py** - Event confirmation service (LSR processing, smart polling)
+10. **test_event_confirmation_tool.py** - Event confirmation tool (geospatial validation)
+11. **test_location.py** - Location utilities (FIPS parsing, coordinate extraction)
+12. **test_nws_alert_parser.py** - NWS alert parsing utilities
+13. **test_datetime_utils.py** - Datetime utility functions
+14. **test_arcgis_wildfire_parser.py** - ArcGIS wildfire data parser
+15. **test_wildfire_utils.py** - Wildfire utility functions
+16. **test_wildfire_crud_service.py** - Wildfire CRUD operations
+17. **test_wildfire_processor.py** - Wildfire processing logic
+18. **test_drought_crud_service.py** - Drought CRUD operations
+19. **test_drought_service.py** - Drought service logic
 
-**Total: 27 tests** (all passing ✅)
+**Total: 283 tests** (all passing ✅)
+
+### Key Test Coverage Areas
+
+- **Event Management**: Creation, updates, completion, confirmation, deactivation
+- **Event Filtering**: FWW (Fire Weather Warning) filtering
+- **Wind Validation**: HWW (High Wind Warning) validation with configurable threshold
+- **Event Confirmation**: LSR processing, smart polling, geospatial validation
+- **Wildfire Processing**: ArcGIS API integration, lifecycle management
+- **Drought Processing**: US Drought Monitor integration, county-level tracking
+- **Location Utilities**: FIPS codes, coordinate extraction, polygon handling
+- **NWS Integration**: Alert polling, parsing, VTEC key generation
 
 ## Test Fixtures
 

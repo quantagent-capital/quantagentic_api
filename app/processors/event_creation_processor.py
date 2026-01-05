@@ -7,6 +7,7 @@ from app.state import state
 from app.services.event_service import EventService
 from app.exceptions.base import ConflictError
 from app.utils.datetime_utils import parse_datetime_to_utc
+from app.agents.wind_validation_agent import WindValidationAgent
 import logging
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,10 @@ class EventCreationProcessor:
 	Handles deduplication by selecting the most recent alert by sent_at timestamp
 	and processes event creation with conflict resolution.
 	"""
+	
+	def __init__(self):
+		"""Initialize the event creation processor."""
+		self.wind_validation_agent = WindValidationAgent()
 	
 	def process(self, new_events: List[FilteredNWSAlert]) -> None:
 		"""
@@ -42,11 +47,17 @@ class EventCreationProcessor:
 		
 		logger.info(f"Processing {len(new_events)} new events")
 		
-		# Deduplicate alerts by key - keep the most recent one by sent_at timestamp
-		deduplicated_events = self._deduplicate_by_key(new_events)
+		# Filter out FWW (Fire Weather Warning) events - we handle wildfires elsewhere
+		filtered_events = [alert for alert in new_events if alert.event_type.upper() != "FWW"]
+		if len(filtered_events) < len(new_events):
+			skipped_count = len(new_events) - len(filtered_events)
+			logger.info(f"Skipped {skipped_count} FWW (Fire Weather Warning) events - handled elsewhere")
 		
-		if len(deduplicated_events) < len(new_events):
-			logger.info(f"Deduplicated {len(new_events)} alerts to {len(deduplicated_events)} unique events by key (selected most recent by sent_at)")
+		# Deduplicate alerts by key - keep the most recent one by sent_at timestamp
+		deduplicated_events = self._deduplicate_by_key(filtered_events)
+		
+		if len(deduplicated_events) < len(filtered_events):
+			logger.info(f"Deduplicated {len(filtered_events)} alerts to {len(deduplicated_events)} unique events by key (selected most recent by sent_at)")
 		
 		# Iterate through events one by one, creating each event
 		for alert in deduplicated_events:
@@ -129,9 +140,16 @@ class EventCreationProcessor:
 		"""
 		Create an event from an alert, handling conflicts gracefully.
 		
+		For HWW (High Wind Warning) events, validates wind speed threshold before creating.
+		
 		Args:
 			alert: FilteredNWSAlert to create event from
 		"""
+		# For HWW events, validate wind speed threshold first
+		if alert.event_type.upper() == "HWW":
+			if not self._handle_wind_warnings(alert):
+				return
+		
 		try:
 			created_event = EventService.create_event_from_alert(alert)
 			logger.debug(f"Created event: `{created_event.event_key}` via service layer")
@@ -145,6 +163,34 @@ class EventCreationProcessor:
 			logger.error(f"Error creating event from alert: {alert.alert_id} via service layer: {str(e)}")
 			import traceback
 			logger.error(traceback.format_exc())
+	
+	def _handle_wind_warnings(self, alert: FilteredNWSAlert) -> bool:
+		"""
+		Handle High Wind Warning (HWW) events by validating wind speed threshold.
+		
+		Args:
+			alert: FilteredNWSAlert for HWW event
+		
+		Returns:
+			True if event should be created, False if it should be skipped
+		"""
+		logger.info(f"Validating HWW event {alert.key} for wind speed threshold")
+		try:
+			result = self.wind_validation_agent.validate(
+				headline=alert.headline or "",
+				description=alert.description or ""
+			)
+			if not result.valid:
+				logger.info(f"Skipping HWW event {alert.key} - wind speed does not meet threshold")
+				return False
+			logger.info(f"HWW event {alert.key} validated - wind speed meets threshold")
+			return True
+		except Exception as validation_error:
+			logger.error(f"Error validating HWW event {alert.key}: {str(validation_error)}")
+			import traceback
+			logger.error(traceback.format_exc())
+			# On validation error, skip the event to be safe
+			return False
 	
 	def _try_fallback_to_update(self, alert: FilteredNWSAlert) -> None:
 		"""

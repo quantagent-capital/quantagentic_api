@@ -182,19 +182,19 @@ class NWSConfirmedEventsPoller:
 				zone_endpoint_path = f"/zones/county/{ugc_code}"
 				logger.warning(f"Could not find matching endpoint for UGC code {ugc_code}, using fallback construction")
 			
-			# Extract shape coordinates
-			shape = []
+			# Extract full_shape coordinates (all polygons)
+			full_shape = []
 			
 			if geometry and geometry.get("type"):
 				# Use geometry from the feature if available
-				shape = self._extract_coordinates_from_geometry(geometry)
+				full_shape = Location.extract_all_shapes(geometry)
 			else:
 				# Geometry is null, fetch from the UGC endpoint
 				try:
 					zone_data = await client.get(zone_endpoint_path, headers={})
 					zone_geometry = zone_data.get("geometry")
 					if zone_geometry:
-						shape = self._extract_coordinates_from_geometry(zone_geometry)
+						full_shape = Location.extract_all_shapes(zone_geometry)
 					else:
 						logger.warning(f"Could not extract geometry from UGC endpoint {full_zone_ugc_endpoint}")
 				except Exception as e:
@@ -207,7 +207,7 @@ class NWSConfirmedEventsPoller:
 				state_fips=state_fips,
 				county_fips=county_fips,
 				ugc_code=ugc_code,
-				shape=shape,
+				full_shape=full_shape,
 				full_zone_ugc_endpoint=full_zone_ugc_endpoint
 			)
 			
@@ -215,14 +215,3 @@ class NWSConfirmedEventsPoller:
 		
 		return locations
 	
-	def _extract_coordinates_from_geometry(self, geometry: Dict[str, Any]) -> List[Coordinate]:
-		"""
-		Extract coordinates from a geometry object (Polygon or MultiPolygon).
-		
-		Args:
-			geometry: Geometry object with type and coordinates
-		
-		Returns:
-			List of Coordinate objects extracted from the geometry
-		"""
-		return Location.extract_coordinates_from_geometry(geometry)

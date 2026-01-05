@@ -38,5 +38,7 @@ class Event(BaseSchema):
 	confirmed: bool = False
 	# The raw VTEC string from the NWS API.
 	raw_vtec: str
+	# The NWS office code (e.g., "KSBY", "KMTR") extracted from raw_vtec.
+	office: Optional[str] = None
 	# The previous alert IDs that have been used to update this event.
 	previous_ids: List[str] = []

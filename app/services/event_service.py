@@ -5,6 +5,7 @@ from app.services.event_crud_service import EventCRUDService
 from app.services.event_create_service import EventCreateService
 from app.services.event_update_service import EventUpdateService
 from app.services.event_completion_service import EventCompletionService
+from app.services.event_confirmation_service import EventConfirmationService
 
 
 class EventService:
@@ -39,6 +40,11 @@ class EventService:
 		"""Get count of active events grouped by event type."""
 		return EventCRUDService.get_active_event_counts_by_type()
 
+	@staticmethod
+	def deactivate_event(event_key: str) -> Event:
+		"""Deactivate an event by setting is_active=False and actual_end_date to current time."""
+		return EventCRUDService.deactivate_event(event_key)
+
 	# Create Operations - delegate to EventCreateService
 	@staticmethod
 	def create_event_from_alert(alert: FilteredNWSAlert) -> Event:
@@ -56,3 +62,14 @@ class EventService:
 	def check_completed_events():
 		"""Check for completed events that should be marked as inactive."""
 		return EventCompletionService.check_completed_events()
+	
+	# Confirmation Operations - delegate to EventConfirmationService
+	@staticmethod
+	async def confirm_event(event: Event):
+		"""Confirm whether an event occurred by running the confirmation crew."""
+		return await EventConfirmationService.confirm_event(event)
+	
+	@staticmethod
+	async def confirm_events():
+		"""Confirm all active and unconfirmed events."""
+		return await EventConfirmationService.confirm_events()
